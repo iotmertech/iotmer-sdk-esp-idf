@@ -1,0 +1,114 @@
+menu "IOTMER"
+
+config IOTMER_PROVISION_API_URL
+    string "Provision API base URL"
+    default "https://console.iotmer.com/api/v1"
+    help
+        Base URL for provisioning API (no trailing slash). Device provisioning will POST to:
+        <base>/provision/device
+
+config IOTMER_PROVISION_AUTH_CODE
+    string "Provision auth code"
+    default ""
+    help
+        Provisioning API key sent as header: iotmer-auth-code.
+        Leave empty after factory provisioning if NVS already holds a full session
+        (device_id, device_key, workspace_slug, MQTT fields); HTTPS provision is then skipped.
+
+config IOTMER_WORKSPACE_ID
+    string "Workspace UUID"
+    default ""
+    help
+        Sent in the provision JSON body. Required only when IOTMER_PROVISION_AUTH_CODE is
+        non-empty (HTTPS provisioning). Ignored when using an NVS-only session with empty auth.
+
+config IOTMER_WORKSPACE_SLUG
+    string "Workspace slug (optional override)"
+    default ""
+    help
+        MQTT topic prefix uses {workspace_slug}/{device_key}/... (console ACL). The provision
+        API returns workspace_slug in JSON; the SDK stores it in NVS. Leave this
+        empty in normal production firmware. Set only for local testing, legacy backends, or
+        to force a slug when you intentionally bypass the value from the API response.
+
+config IOTMER_TEMPLATE_ID
+    string "Template UUID (optional)"
+    default ""
+
+config IOTMER_WIFI_SSID
+    string "WiFi SSID"
+    default ""
+
+config IOTMER_WIFI_PASSWORD
+    string "WiFi Password"
+    default ""
+
+config IOTMER_NVS_NAMESPACE
+    string "NVS namespace"
+    default "iotmer_creds"
+
+config IOTMER_PROVISION_TIMEOUT_MS
+    int "Provision HTTP timeout (ms)"
+    default 10000
+
+config IOTMER_AUTO_OTA
+    bool "After provision, HTTPS OTA when firmware SHA256 changes"
+    default y
+    help
+        If the provision JSON includes firmware_url and firmware_checksum_sha256, and the
+        checksum differs from the last applied image (NVS: fw_applied_sha256), download via
+        HTTPS (CA bundle) and reboot into the new app. Requires an OTA-capable partition table.
+
+config IOTMER_OTA_APPLY_EVEN_IF_SAME_SHA
+    bool "OTA even when provision SHA256 matches last applied (NVS)"
+    default n
+    depends on IOTMER_AUTO_OTA
+    help
+        When disabled (default), OTA is skipped if firmware_checksum_sha256 equals the value
+        stored after the last successful OTA — avoids redundant downloads on field devices.
+        Enable on provisioning / factory firmware so every successful HTTPS provision still runs
+        the OTA download when the server returns URL + checksum, even if the hash is unchanged
+        (rebuilt binary with identical SHA, forced redeploy, or backend that keys only on hash).
+
+config IOTMER_OTA_TIMEOUT_MS
+    int "HTTPS OTA download timeout (ms)"
+    default 120000
+    depends on IOTMER_AUTO_OTA
+
+config IOTMER_FIRMWARE_POLL
+    bool "Background provision poll when firmware URL/SHA missing"
+    default y
+    help
+        If provision succeeds and device_id is known but firmware_url or firmware_checksum_sha256
+        is empty, start a FreeRTOS task that re-calls provision every IOTMER_FIRMWARE_POLL_INTERVAL_MS
+        until both are set (then runs OTA path as usual) or forever if the backend never assigns firmware.
+        Also keeps polling after OTA rejects the image (ESP_ERR_INVALID_VERSION e.g. wrong chip,
+        ESP_ERR_OTA_VALIDATE_FAILED) so a fixed binary on the server can be picked up without reboot.
+
+config IOTMER_FIRMWARE_POLL_INTERVAL_MS
+    int "Firmware poll interval (ms)"
+    default 60000
+    depends on IOTMER_FIRMWARE_POLL
+
+config IOTMER_FIRMWARE_POLL_AGGRESSIVE_MS
+    int "Firmware poll fast interval (ms) when OTA failed or metadata missing"
+    default 8000
+    help
+        Used (only when IOTMER_FIRMWARE_POLL is enabled) instead of IOTMER_FIRMWARE_POLL_INTERVAL_MS
+        while firmware_url/checksum are missing or after OTA image rejection (wrong chip, corrupt
+        image), so retries are visible without waiting a full minute each time.
+
+config IOTMER_FIRMWARE_POLL_TASK_STACK
+    int "Firmware poll task stack (bytes)"
+    default 8192
+    depends on IOTMER_FIRMWARE_POLL
+
+config IOTMER_FIRMWARE_POLL_TASK_PRIORITY
+    int "Firmware poll task priority (0 = lowest)"
+    default 3
+    depends on IOTMER_FIRMWARE_POLL
+    help
+        Keep this modest so WiFi / IDLE get CPU during long TLS (provision/OTA) on single-core chips.
+
+endmenu
+

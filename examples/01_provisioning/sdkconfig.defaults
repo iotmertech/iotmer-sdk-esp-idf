@@ -1,0 +1,37 @@
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# Keep factory/OTA_0/OTA_1 (1 MiB each) builds under partition size with TLS + bundle.
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+
+# Two OTA slots need flash larger than 2MB on ESP-IDF default partition layouts.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# Auto-OTA after provision needs two OTA app slots.
+CONFIG_PARTITION_TABLE_TWO_OTA=y
+
+# Provisioning image: always run OTA when the server returns URL + checksum (do not skip on
+# matching NVS applied SHA — same-hash rebuilds / forced redeploy still flash).
+CONFIG_IOTMER_OTA_APPLY_EVEN_IF_SAME_SHA=y
+
+# HTTPS provisioning + MQTT TLS need the Mozilla CA bundle (esp_crt_bundle_attach).
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+
+# Google Trust Services / Cloudflare-style chains often include cross-signed roots (e.g. GTS Root R4
+# signed by GlobalSign). Without this, esp_crt_bundle may log "No matching trusted root certificate".
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y
+
+# Default main stack (3584) is too small for mbedTLS full chain verify on HTTPS provision.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# Long TLS (provision / OTA from iotmer_fwpoll) can starve IDLE on single-core; default 5s is tight.
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
+
+CONFIG_IOTMER_WIFI_SSID=""
+CONFIG_IOTMER_WIFI_PASSWORD=""
+
+CONFIG_IOTMER_PROVISION_AUTH_CODE=""
+CONFIG_IOTMER_WORKSPACE_ID=""
+CONFIG_IOTMER_WORKSPACE_SLUG=""
+CONFIG_IOTMER_TEMPLATE_ID=""
+

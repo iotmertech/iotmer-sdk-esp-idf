@@ -1,0 +1,39 @@
+# ESP-IDF build outputs
+**/build/
+build/
+
+# Component Manager (recreated by `idf.py build`)
+**/managed_components/
+
+# Local sdkconfig (use sdkconfig.defaults; regenerate with idf.py set-target / build)
+examples/*/sdkconfig
+
+# Backups
+**/sdkconfig.old
+*.bak
+
+# CMake / tooling
+**/CMakeCache.txt
+**/compile_commands.json
+**/.cmake/
+
+# Python
+__pycache__/
+*.py[cod]
+.Python
+venv/
+.venv/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs & debug
+*.log
+
+.cache/
+docs/

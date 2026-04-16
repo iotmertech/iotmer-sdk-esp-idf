@@ -1,0 +1,10 @@
+version: "0.1.0"
+description: "IOTMER IoT Platform SDK for ESP-IDF"
+url: "https://github.com/iotmertech/iotmer-sdk-esp-idf"
+dependencies:
+  idf: ">=5.0.0"
+  # ESP-IDF v6+: built-in `json` removed — use managed cJSON.
+  espressif/cjson: "^1.7.19"
+  # ESP-IDF v6+: ESP-MQTT moved out of core — use managed MQTT client.
+  espressif/mqtt: "*"
+
