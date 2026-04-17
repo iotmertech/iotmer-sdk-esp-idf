@@ -64,8 +64,8 @@ typedef void (*iotmer_config_event_cb_t)(void *user_ctx, const iotmer_config_eve
  * MQTT Config Protocol v1 — reassembly / crypto workspace.
  *
  * Buffer layout (single user-supplied region):
- * - Lower half [0 .. cap/2): accumulates gzip stream bytes from chunked `data_b64` payloads.
- * - Upper half [cap/2 .. cap): staging for per-message JSON parse and final inflated JSON.
+ * - Lower half [0 .. cap/2): decoded `data_b64` payload bytes (gzip stream or raw JSON for identity).
+ * - Upper half [cap/2 .. cap): per-message JSON parse buffer and final effective JSON for the callback.
  *
  * Requirements:
  * - cap >= 4096 and even.
@@ -85,6 +85,8 @@ typedef struct {
     char     pending_rid[IOTMER_CONFIG_RID_LEN];
 
     bool     chunk_meta_init;
+    /** Active `config/resp` transfer uses gzip path (else identity raw JSON in lower half). */
+    bool     resp_chunk_is_gzip;
     uint32_t resp_version;
     char     resp_sha_hex[IOTMER_CONFIG_SHA_HEX_LEN];
     uint32_t total_chunks;

@@ -373,7 +373,7 @@ esp_err_t iotmer_provision(iotmer_creds_t *out, bool *https_performed)
             ESP_LOGW(TAG, "workspace_slug parse: %s", esp_err_to_name(slug_e));
         }
     }
-    /* API should return workspace_slug; Kconfig is an optional fallback (tests / legacy). */
+    /* API should return workspace_slug; Kconfig is an optional fallback (tests or manual override). */
     if (out->workspace_slug[0] == '\0' && strlen(CONFIG_IOTMER_WORKSPACE_SLUG) != 0) {
         strncpy(out->workspace_slug, CONFIG_IOTMER_WORKSPACE_SLUG, sizeof(out->workspace_slug));
         out->workspace_slug[sizeof(out->workspace_slug) - 1] = '\0';

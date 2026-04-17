@@ -4,7 +4,7 @@ This example demonstrates the **MQTT Config Protocol v1** implemented by the `io
 
 Flow:
 
-`config/meta` (retained) → `config/get` → `config/resp` (identity or gzip+base64 chunks) → `config/status`
+`config/meta` (retained) → `config/get` → `config/resp` (chunked `data_b64`, gzip or identity) → `config/status`
 
 For the complete topic/payload contract (field-by-field), see the docs page:
 
@@ -27,7 +27,8 @@ Committing `dependencies.lock` is recommended for CI and reproducible builds.
 - Subscribes to `…/config/#`
 - Waits for `…/config/meta` (usually retained)
 - Publishes `…/config/get` with:
-  - `rid` (UUID)
+  - `rid` (UUID v4)
   - `want.chunk_bytes=4096`
   - `want.max_total_bytes=1048576`
-- Receives `…/config/resp` (single or chunked), validates SHA-256, prints a preview, then publishes `…/config/status`.
+  - `want.accept_encoding`: `["gzip","identity"]`
+- Receives `…/config/resp` as one or more **chunked** messages (`chunk_index`, `data_b64`), validates SHA-256 over the reassembled effective JSON, prints a preview, then publishes `…/config/status`.

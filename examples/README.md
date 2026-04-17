@@ -7,7 +7,7 @@ Reference applications for this repository’s `iotmer` component. **More exampl
 | [`01_provisioning`](01_provisioning/) | Factory bring-up: HTTPS provision, NVS save, optional OTA. No MQTT client. |
 | [`02_telemetry`](02_telemetry/) | Field-style app: MQTT connect, subscribe, telemetry loop. |
 | [`03_lwt_presence`](03_lwt_presence/) | Retained presence + MQTT last-will ONLINE/OFFLINE. |
-| [`04_config`](04_config/) | MQTT Config Protocol v1: `config/meta` → `config/get` → `config/resp` (gzip+base64 chunks) → `config/status`. |
+| [`04_config`](04_config/) | MQTT Config Protocol v1: `config/meta` → `config/get` → `config/resp` (chunked `data_b64`, gzip or identity) → `config/status`. |
 
 ## Prerequisites
 

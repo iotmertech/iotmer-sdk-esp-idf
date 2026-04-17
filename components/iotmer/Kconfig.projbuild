@@ -28,7 +28,7 @@ config IOTMER_WORKSPACE_SLUG
     help
         MQTT topic prefix uses {workspace_slug}/{device_key}/... (console ACL). The provision
         API returns workspace_slug in JSON; the SDK stores it in NVS. Leave this
-        empty in normal production firmware. Set only for local testing, legacy backends, or
+        empty in normal production firmware. Set only for local testing or
         to force a slug when you intentionally bypass the value from the API response.
 
 config IOTMER_TEMPLATE_ID

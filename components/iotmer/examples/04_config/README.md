@@ -1,6 +1,6 @@
 # 04_config
 
-ESP-IDF example that subscribes to the IOTMER config MQTT topics and demonstrates the gzip+base64 config flow callbacks.
+ESP-IDF example that subscribes to the IOTMER config MQTT topics and demonstrates **MQTT Config Protocol v1**: chunked `config/resp` (`data_b64`, **gzip** or **identity**), SHA-256 check, and `config/status` callbacks.
 
 ## Code (overview)
 
@@ -39,4 +39,5 @@ idf.py build flash monitor
 ## Notes
 
 - Configure Wi‑Fi / workspace values via `menuconfig` (see `sdkconfig.defaults` for Kconfig symbol names).
+- v1 `config/resp` is **always chunked** with `data_b64` (gzip or identity); there is no single-message `data` envelope. Field-level contract: repo `docs/sdk/esp-idf/mqtt-config-protocol.md`.
 - Canonical source also lives in the main repository: `https://github.com/iotmertech/iotmer-sdk-esp-idf/tree/main/examples/04_config`

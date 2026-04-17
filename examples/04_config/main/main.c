@@ -14,7 +14,7 @@ static const char *TAG = "04_config";
 
 static iotmer_client_t s_client;
 static iotmer_config_ctx_t s_cfg;
-/* Lower half: gzip accum; upper half: JSON staging + inflated config (see iotmer_config.h). */
+/* Lower half: decoded chunk bytes (gzip or identity); upper half: final JSON (see iotmer_config.h). */
 static uint8_t s_cfg_buf[65536];
 
 static void on_cfg_event(void *user, const iotmer_config_event_t *ev)
@@ -57,7 +57,7 @@ static void on_cfg_event(void *user, const iotmer_config_event_t *ev)
     case IOTMER_CONFIG_EV_RESP_ERROR:
         ESP_LOGW(TAG, "RESP err rid=%s code=%s msg=%s retryable=%d", ev->rid,
                  ev->u.resp_err.code, ev->u.resp_err.message, (int)ev->u.resp_err.retryable);
-        /* `config/status` applied=false needs version+sha256; include them when cloud adds to err payload. */
+        /* On CONFIG_TOO_LARGE etc., publish `config/status` with applied=false if you have version+sha256. */
         break;
     case IOTMER_CONFIG_EV_FAIL:
         ESP_LOGE(TAG, "FAIL: %s", ev->u.fail.message);

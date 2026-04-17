@@ -154,261 +154,29 @@ static void fmt_iso8601_utc_z(char *out, size_t out_len)
 }
 
 /* -------------------------------------------------------------------------- */
-/* JSON: skip value + extract root "data" object span (for identity SHA)      */
+/* Chunked config/resp (gzip or identity)                                    */
 /* -------------------------------------------------------------------------- */
 
-static void skip_ws(const char *s, size_t n, size_t *pos)
+static bool content_type_is_application_json(const char *s)
 {
-    while (*pos < n && isspace((unsigned char)s[*pos])) {
-        (*pos)++;
+    static const char want[] = "application/json";
+    if (!s) {
+        return false;
     }
-}
-
-static esp_err_t skip_string(const char *s, size_t n, size_t *pos)
-{
-    if (*pos >= n || s[*pos] != '"') {
-        return ESP_ERR_INVALID_ARG;
-    }
-    (*pos)++;
-    while (*pos < n) {
-        unsigned char c = (unsigned char)s[*pos];
-        if (c == '\\') {
-            (*pos) += 2;
-            continue;
+    size_t i = 0;
+    for (; want[i] != '\0'; i++) {
+        char c = s[i];
+        if (c == '\0') {
+            return false;
         }
-        if (c == '"') {
-            (*pos)++;
-            return ESP_OK;
+        if (c >= 'A' && c <= 'Z') {
+            c = (char)(c - 'A' + 'a');
         }
-        (*pos)++;
-    }
-    return ESP_ERR_INVALID_ARG;
-}
-
-static esp_err_t skip_bracketed(const char *s, size_t n, size_t *pos, char open, char close);
-
-static esp_err_t skip_object(const char *s, size_t n, size_t *pos)
-{
-    return skip_bracketed(s, n, pos, '{', '}');
-}
-
-static esp_err_t skip_array(const char *s, size_t n, size_t *pos)
-{
-    return skip_bracketed(s, n, pos, '[', ']');
-}
-
-static esp_err_t skip_bracketed(const char *s, size_t n, size_t *pos, char open, char close)
-{
-    if (*pos >= n || s[*pos] != open) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    (*pos)++;
-    int depth = 1;
-    bool in_str = false;
-    while (*pos < n && depth > 0) {
-        unsigned char c = (unsigned char)s[*pos];
-        if (in_str) {
-            if (c == '\\') {
-                (*pos) += 2;
-                continue;
-            }
-            if (c == '"') {
-                in_str = false;
-                (*pos)++;
-                continue;
-            }
-            (*pos)++;
-            continue;
-        }
-        if (c == '"') {
-            in_str = true;
-            (*pos)++;
-            continue;
-        }
-        if (c == (unsigned char)open) {
-            depth++;
-            (*pos)++;
-            continue;
-        }
-        if (c == (unsigned char)close) {
-            depth--;
-            (*pos)++;
-            continue;
-        }
-        (*pos)++;
-    }
-    return (depth == 0) ? ESP_OK : ESP_ERR_INVALID_ARG;
-}
-
-static esp_err_t skip_number(const char *s, size_t n, size_t *pos)
-{
-    if (*pos >= n) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (s[*pos] == '-') {
-        (*pos)++;
-    }
-    while (*pos < n && isdigit((unsigned char)s[*pos])) {
-        (*pos)++;
-    }
-    if (*pos < n && s[*pos] == '.') {
-        (*pos)++;
-        while (*pos < n && isdigit((unsigned char)s[*pos])) {
-            (*pos)++;
+        if (c != want[i]) {
+            return false;
         }
     }
-    if (*pos < n && (s[*pos] == 'e' || s[*pos] == 'E')) {
-        (*pos)++;
-        if (*pos < n && (s[*pos] == '+' || s[*pos] == '-')) {
-            (*pos)++;
-        }
-        while (*pos < n && isdigit((unsigned char)s[*pos])) {
-            (*pos)++;
-        }
-    }
-    return ESP_OK;
-}
-
-static esp_err_t skip_json_value(const char *s, size_t n, size_t *pos)
-{
-    skip_ws(s, n, pos);
-    if (*pos >= n) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    char c = s[*pos];
-    if (c == '"') {
-        return skip_string(s, n, pos);
-    }
-    if (c == '{') {
-        return skip_object(s, n, pos);
-    }
-    if (c == '[') {
-        return skip_array(s, n, pos);
-    }
-    if (strncmp(s + *pos, "true", 4) == 0) {
-        *pos += 4;
-        return ESP_OK;
-    }
-    if (strncmp(s + *pos, "false", 5) == 0) {
-        *pos += 5;
-        return ESP_OK;
-    }
-    if (strncmp(s + *pos, "null", 4) == 0) {
-        *pos += 4;
-        return ESP_OK;
-    }
-    return skip_number(s, n, pos);
-}
-
-static esp_err_t extract_object_span(const char *s, size_t n, size_t start, size_t *end_out)
-{
-    size_t i = start;
-    if (i >= n || s[i] != '{') {
-        return ESP_ERR_INVALID_ARG;
-    }
-    i++;
-    int depth = 1;
-    bool in_str = false;
-    for (; i < n && depth > 0; i++) {
-        unsigned char c = (unsigned char)s[i];
-        if (in_str) {
-            if (c == '\\') {
-                i++;
-                continue;
-            }
-            if (c == '"') {
-                in_str = false;
-            }
-            continue;
-        }
-        if (c == '"') {
-            in_str = true;
-            continue;
-        }
-        if (c == '{') {
-            depth++;
-            continue;
-        }
-        if (c == '}') {
-            depth--;
-            continue;
-        }
-    }
-    if (depth != 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    *end_out = i;
-    return ESP_OK;
-}
-
-/**
- * Find top-level `"data": { ... }` value span in raw JSON (for SHA over canonical inner object).
- */
-static esp_err_t extract_root_data_object_span(const char *s, size_t n, size_t *out_off,
-                                               size_t *out_len)
-{
-    size_t pos = 0;
-    skip_ws(s, n, &pos);
-    if (pos >= n || s[pos] != '{') {
-        return ESP_ERR_INVALID_ARG;
-    }
-    pos++;
-    while (pos < n) {
-        skip_ws(s, n, &pos);
-        if (pos >= n) {
-            return ESP_ERR_INVALID_ARG;
-        }
-        if (s[pos] == '}') {
-            return ESP_ERR_NOT_FOUND;
-        }
-        if (s[pos] != '"') {
-            return ESP_ERR_INVALID_ARG;
-        }
-        size_t kstart = pos + 1;
-        size_t k = kstart;
-        while (k < n) {
-            if (s[k] == '\\') {
-                k += 2;
-                continue;
-            }
-            if (s[k] == '"') {
-                break;
-            }
-            k++;
-        }
-        if (k >= n) {
-            return ESP_ERR_INVALID_ARG;
-        }
-        size_t klen = k - kstart;
-        pos = k + 1;
-        skip_ws(s, n, &pos);
-        if (pos >= n || s[pos] != ':') {
-            return ESP_ERR_INVALID_ARG;
-        }
-        pos++;
-        skip_ws(s, n, &pos);
-        bool is_data = (klen == 4U) && (memcmp(s + kstart, "data", 4) == 0);
-        if (is_data && pos < n && s[pos] == '{') {
-            size_t obj_start = pos;
-            size_t obj_end = 0;
-            esp_err_t e = extract_object_span(s, n, obj_start, &obj_end);
-            if (e != ESP_OK) {
-                return e;
-            }
-            *out_off = obj_start;
-            *out_len = obj_end - obj_start;
-            return ESP_OK;
-        }
-        esp_err_t e = skip_json_value(s, n, &pos);
-        if (e != ESP_OK) {
-            return e;
-        }
-        skip_ws(s, n, &pos);
-        if (pos < n && s[pos] == ',') {
-            pos++;
-        }
-    }
-    return ESP_ERR_NOT_FOUND;
+    return s[i] == '\0';
 }
 
 /* -------------------------------------------------------------------------- */
@@ -510,6 +278,7 @@ static void transfer_reset(iotmer_config_ctx_t *ctx)
     }
     ctx->transfer_active    = false;
     ctx->chunk_meta_init    = false;
+    ctx->resp_chunk_is_gzip = false;
     ctx->total_chunks       = 0;
     ctx->gzip_len           = 0;
     ctx->pending_rid[0]     = '\0';
@@ -723,14 +492,16 @@ static esp_err_t handle_meta(iotmer_config_ctx_t *ctx, iotmer_client_t *client,
     return ESP_OK;
 }
 
-static esp_err_t handle_resp_chunked_gzip(iotmer_config_ctx_t *ctx, cJSON *root,
-                                          iotmer_config_event_cb_t cb, void *user_ctx)
+static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
+                                     iotmer_config_event_cb_t cb, void *user_ctx)
 {
     cJSON *jrid = cJSON_GetObjectItemCaseSensitive(root, "rid");
     cJSON *jok  = cJSON_GetObjectItemCaseSensitive(root, "ok");
     cJSON *jver = cJSON_GetObjectItemCaseSensitive(root, "version");
     cJSON *jsha = cJSON_GetObjectItemCaseSensitive(root, "sha256");
     cJSON *jenc = cJSON_GetObjectItemCaseSensitive(root, "encoding");
+    cJSON *jct  = cJSON_GetObjectItemCaseSensitive(root, "content_type");
+    cJSON *jcb  = cJSON_GetObjectItemCaseSensitive(root, "chunk_bytes");
     cJSON *jidx = cJSON_GetObjectItemCaseSensitive(root, "chunk_index");
     cJSON *jtot = cJSON_GetObjectItemCaseSensitive(root, "total_chunks");
     cJSON *jb64 = cJSON_GetObjectItemCaseSensitive(root, "data_b64");
@@ -738,8 +509,17 @@ static esp_err_t handle_resp_chunked_gzip(iotmer_config_ctx_t *ctx, cJSON *root,
     if (!cJSON_IsString(jrid) || jrid->valuestring == NULL || !cJSON_IsBool(jok) ||
         !cJSON_IsNumber(jver) || !cJSON_IsString(jsha) || jsha->valuestring == NULL ||
         !cJSON_IsString(jenc) || jenc->valuestring == NULL || !cJSON_IsNumber(jidx) ||
-        !cJSON_IsNumber(jtot) || !cJSON_IsString(jb64) || jb64->valuestring == NULL) {
+        !cJSON_IsNumber(jtot) || !cJSON_IsString(jb64) || jb64->valuestring == NULL ||
+        !cJSON_IsString(jct) || jct->valuestring == NULL || !cJSON_IsNumber(jcb)) {
         emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): missing fields");
+        transfer_reset(ctx);
+        return ESP_FAIL;
+    }
+    (void)jcb;
+
+    if (!content_type_is_application_json(jct->valuestring)) {
+        emit_fail(cb, user_ctx, ctx->pending_rid,
+                  "resp(chunked): content_type must be application/json");
         transfer_reset(ctx);
         return ESP_FAIL;
     }
@@ -755,16 +535,21 @@ static esp_err_t handle_resp_chunked_gzip(iotmer_config_ctx_t *ctx, cJSON *root,
     }
 
     const char *enc = jenc->valuestring;
-    if (strstr(enc, "gzip") == NULL) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): encoding missing gzip");
+    bool path_gzip;
+    if (strstr(enc, "gzip") != NULL) {
+        path_gzip = true;
+    } else if (strstr(enc, "identity") != NULL) {
+        path_gzip = false;
+    } else {
+        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): encoding unsupported");
         transfer_reset(ctx);
         return ESP_FAIL;
     }
 
-    uint32_t ver   = (uint32_t)jver->valuedouble;
+    uint32_t ver    = (uint32_t)jver->valuedouble;
     const char *sha = jsha->valuestring;
-    uint32_t idx   = (uint32_t)jidx->valuedouble;
-    uint32_t tot   = (uint32_t)jtot->valuedouble;
+    uint32_t idx    = (uint32_t)jidx->valuedouble;
+    uint32_t tot    = (uint32_t)jtot->valuedouble;
 
     if (tot == 0U || tot > IOTMER_CONFIG_MAX_CHUNKS) {
         emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): total_chunks invalid");
@@ -773,8 +558,9 @@ static esp_err_t handle_resp_chunked_gzip(iotmer_config_ctx_t *ctx, cJSON *root,
     }
 
     if (!ctx->chunk_meta_init) {
-        ctx->chunk_meta_init = true;
-        ctx->resp_version = ver;
+        ctx->chunk_meta_init     = true;
+        ctx->resp_chunk_is_gzip  = path_gzip;
+        ctx->resp_version        = ver;
         strncpy(ctx->resp_sha_hex, sha, sizeof(ctx->resp_sha_hex) - 1U);
         ctx->resp_sha_hex[sizeof(ctx->resp_sha_hex) - 1U] = '\0';
         ctx->total_chunks = tot;
@@ -782,7 +568,7 @@ static esp_err_t handle_resp_chunked_gzip(iotmer_config_ctx_t *ctx, cJSON *root,
         memset(ctx->chunk_bmap, 0, sizeof(ctx->chunk_bmap));
     } else {
         if (ctx->resp_version != ver || strcmp(ctx->resp_sha_hex, sha) != 0 ||
-            ctx->total_chunks != tot) {
+            ctx->total_chunks != tot || ctx->resp_chunk_is_gzip != path_gzip) {
             emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): inconsistent metadata");
             transfer_reset(ctx);
             return ESP_FAIL;
@@ -807,16 +593,35 @@ static esp_err_t handle_resp_chunked_gzip(iotmer_config_ctx_t *ctx, cJSON *root,
         return ESP_OK;
     }
 
-    size_t json_len = 0;
-    esp_err_t gi = gunzip_to_upper(ctx, ctx->gzip_len, &json_len);
-    if (gi != ESP_OK) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): gunzip failed");
-        transfer_reset(ctx);
-        return gi;
+    const size_t h = half_cap(ctx);
+    size_t         json_len = 0;
+    const uint8_t *sha_in  = NULL;
+
+    if (ctx->resp_chunk_is_gzip) {
+        esp_err_t gi = gunzip_to_upper(ctx, ctx->gzip_len, &json_len);
+        if (gi != ESP_OK) {
+            emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): gunzip failed");
+            transfer_reset(ctx);
+            return gi;
+        }
+        sha_in = ctx->buf + h;
+    } else {
+        json_len = ctx->gzip_len;
+        if (json_len == 0U || json_len > h) {
+            emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): identity payload invalid");
+            transfer_reset(ctx);
+            return ESP_ERR_NO_MEM;
+        }
+        if (json_len + 1U > ctx->cap - h) {
+            emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): json too large for buffer");
+            transfer_reset(ctx);
+            return ESP_ERR_NO_MEM;
+        }
+        sha_in = ctx->buf;
     }
 
     char calc[IOTMER_CONFIG_SHA_HEX_LEN];
-    esp_err_t se = sha256_bytes(ctx->buf + half_cap(ctx), json_len, calc);
+    esp_err_t se = sha256_bytes(sha_in, json_len, calc);
     if (se != ESP_OK) {
         emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): sha256 failed");
         transfer_reset(ctx);
@@ -828,6 +633,11 @@ static esp_err_t handle_resp_chunked_gzip(iotmer_config_ctx_t *ctx, cJSON *root,
         return ESP_ERR_INVALID_CRC;
     }
 
+    if (!ctx->resp_chunk_is_gzip) {
+        memmove(ctx->buf + h, ctx->buf, json_len);
+    }
+    ctx->buf[h + json_len] = '\0';
+
     if (cb) {
         iotmer_config_event_t ev;
         memset(&ev, 0, sizeof(ev));
@@ -835,80 +645,8 @@ static esp_err_t handle_resp_chunked_gzip(iotmer_config_ctx_t *ctx, cJSON *root,
         strncpy(ev.rid, ctx->pending_rid, sizeof(ev.rid) - 1U);
         ev.u.config.version = ctx->resp_version;
         strncpy(ev.u.config.sha256_hex, ctx->resp_sha_hex, sizeof(ev.u.config.sha256_hex) - 1U);
-        ev.u.config.json_utf8 = ctx->buf + half_cap(ctx);
-        ev.u.config.json_len  = json_len;
-        cb(user_ctx, &ev);
-    }
-
-    transfer_reset(ctx);
-    return ESP_OK;
-}
-
-static esp_err_t handle_resp_identity_single(iotmer_config_ctx_t *ctx, const char *payload,
-                                             int payload_len, cJSON *root,
-                                             iotmer_config_event_cb_t cb, void *user_ctx)
-{
-    cJSON *jrid = cJSON_GetObjectItemCaseSensitive(root, "rid");
-    cJSON *jok  = cJSON_GetObjectItemCaseSensitive(root, "ok");
-    cJSON *jver = cJSON_GetObjectItemCaseSensitive(root, "version");
-    cJSON *jsha = cJSON_GetObjectItemCaseSensitive(root, "sha256");
-    if (!cJSON_IsString(jrid) || jrid->valuestring == NULL || !cJSON_IsBool(jok) ||
-        !cJSON_IsNumber(jver) || !cJSON_IsString(jsha) || jsha->valuestring == NULL) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(single): missing fields");
-        transfer_reset(ctx);
-        return ESP_FAIL;
-    }
-    if (strcmp(jrid->valuestring, ctx->pending_rid) != 0) {
-        return ESP_OK;
-    }
-    if (!cJSON_IsTrue(jok)) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(single): ok!=true");
-        transfer_reset(ctx);
-        return ESP_FAIL;
-    }
-
-    size_t doff = 0, dlen = 0;
-    esp_err_t ex =
-        extract_root_data_object_span(payload, (size_t)payload_len, &doff, &dlen);
-    if (ex != ESP_OK) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(single): extract data object failed");
-        transfer_reset(ctx);
-        return ex;
-    }
-
-    uint32_t ver    = (uint32_t)jver->valuedouble;
-    const char *sha = jsha->valuestring;
-
-    const size_t h = half_cap(ctx);
-    if (dlen == 0U || dlen > h) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(single): data span too large");
-        transfer_reset(ctx);
-        return ESP_ERR_NO_MEM;
-    }
-    memcpy(ctx->buf + h, payload + doff, dlen);
-
-    char calc[IOTMER_CONFIG_SHA_HEX_LEN];
-    esp_err_t se = sha256_bytes(ctx->buf + h, dlen, calc);
-    if (se != ESP_OK) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(single): sha256 failed");
-        transfer_reset(ctx);
-        return se;
-    }
-    if (!sha256_hex_equal_ci(calc, sha)) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(single): sha256 mismatch");
-        transfer_reset(ctx);
-        return ESP_ERR_INVALID_CRC;
-    }
-
-    if (cb) {
-        iotmer_config_event_t ev;
-        memset(&ev, 0, sizeof(ev));
-        ev.type = IOTMER_CONFIG_EV_CONFIG_JSON;
-        strncpy(ev.rid, ctx->pending_rid, sizeof(ev.rid) - 1U);
-        ev.u.config.version = ver;
-        strncpy(ev.u.config.sha256_hex, sha, sizeof(ev.u.config.sha256_hex) - 1U);
         ev.u.config.json_utf8 = ctx->buf + h;
-        ev.u.config.json_len  = dlen;
+        ev.u.config.json_len  = json_len;
         cb(user_ctx, &ev);
     }
 
@@ -988,14 +726,16 @@ static esp_err_t handle_resp(iotmer_config_ctx_t *ctx, const char *payload, int 
 
     cJSON *jidx = cJSON_GetObjectItemCaseSensitive(root, "chunk_index");
     if (cJSON_IsNumber(jidx)) {
-        esp_err_t e = handle_resp_chunked_gzip(ctx, root, cb, user_ctx);
+        esp_err_t e = handle_resp_chunked(ctx, root, cb, user_ctx);
         cJSON_Delete(root);
         return e;
     }
 
-    esp_err_t e = handle_resp_identity_single(ctx, payload, payload_len, root, cb, user_ctx);
+    emit_fail(cb, user_ctx, ctx->pending_rid,
+              "resp: missing chunk_index (v1 requires chunked data_b64)");
+    transfer_reset(ctx);
     cJSON_Delete(root);
-    return e;
+    return ESP_FAIL;
 }
 
 esp_err_t iotmer_config_on_mqtt(iotmer_config_ctx_t *ctx, iotmer_client_t *client,
