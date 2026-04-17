@@ -23,3 +23,4 @@ void app_main(void)
     ESP_LOGI("main", "device_id: %s", client.creds.device_id);
     ESP_LOGI("main", "mqtt_host: %s", client.creds.mqtt_host);
 }
+

@@ -43,3 +43,5 @@ docs/
 
 # Local packaging artifacts (ESP Component Manager / compote)
 components/iotmer/dist/
+
+.vscode/

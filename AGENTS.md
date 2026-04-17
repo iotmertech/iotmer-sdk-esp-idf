@@ -5,8 +5,9 @@ This file helps **AI coding agents** (Cursor, Copilot, and similar) and humans w
 ## What this repository does
 
 - **Official ESP-IDF component** connecting Espressif chips to the **[IOTMER](https://iotmer.com)** cloud.
-- **High-level flow**: Wi‑Fi, HTTPS device provisioning, credentials in NVS, MQTT (TLS), optional HTTPS OTA.
+- **High-level flow**: Wi‑Fi, HTTPS device provisioning, credentials in NVS, MQTT (TLS), optional HTTPS OTA, optional **BLE Wi‑Fi credential provisioning** (NimBLE, `iotmer_ble_wifi_prov`).
 - **Public application API**: `components/iotmer/include/iotmer_client.h` (headers applications should include).
+- **Optional BLE provisioning API**: `components/iotmer_ble_wifi_prov/include/iotmer_ble_wifi_prov.h` (separate component; not included unless the app adds it).
 - **MQTT Config Protocol v1** (device side): `components/iotmer/include/iotmer_config.h` and `iotmer_config.c`.
 
 For authoritative behaviour details, use **[docs.iotmer.com](https://docs.iotmer.com/)** together with the `docs/sdk/esp-idf/` scaffold in this repo.
@@ -18,13 +19,16 @@ For authoritative behaviour details, use **[docs.iotmer.com](https://docs.iotmer
 | 1 | [`README.md`](README.md) | Install, Component Manager, `EXTRA_COMPONENT_DIRS` |
 | 2 | [`components/iotmer/README.md`](components/iotmer/README.md) | Component overview, example index |
 | 3 | [`examples/README.md`](examples/README.md) | `idf.py`, `menuconfig`, directory → role table, troubleshooting |
-| 4 | [`components/iotmer/Kconfig.projbuild`](components/iotmer/Kconfig.projbuild) | All `CONFIG_IOTMER_*` symbols |
+| 4 | [`components/iotmer/Kconfig.projbuild`](components/iotmer/Kconfig.projbuild) | Core `CONFIG_IOTMER_*` symbols |
+| 5 | [`components/iotmer_ble_wifi_prov/Kconfig.projbuild`](components/iotmer_ble_wifi_prov/Kconfig.projbuild) | BLE provisioning `CONFIG_IOTMER_BLE_*` (when component is in the project) |
+| 6 | [`docs/sdk/esp-idf/ble-wifi-provisioning.md`](docs/sdk/esp-idf/ble-wifi-provisioning.md) | BLE GATT protocol v1 (English scaffold) |
 
 When changing code, cross-check the relevant example’s `sdkconfig.defaults`, the “SDK layout” section in `examples/README.md`, and signatures in `iotmer_client.h`.
 
 ## Directory map (short)
 
 - `components/iotmer/` — shipping component: `*.c`, `include/`, `CMakeLists.txt`, `idf_component.yml`, Kconfig.
+- `components/iotmer_ble_wifi_prov/` — optional BLE Wi‑Fi provisioning (NimBLE); `README.md`, `Kconfig.projbuild`, public `iotmer_ble_wifi_prov.h`.
 - `examples/*` — reference apps; treat each as its own ESP-IDF project root.
 - `docs/` — English Markdown scaffold; keep aligned with the published site **[docs.iotmer.com](https://docs.iotmer.com/)** when behaviour is documented there.
 

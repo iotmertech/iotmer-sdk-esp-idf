@@ -2,6 +2,8 @@
 
 IOTMER IoT Platform SDK for ESP-IDF: Wi‑Fi provisioning, NVS credentials, MQTT (TLS), telemetry, presence (LWT), optional HTTPS OTA.
 
+Optional **BLE Wi‑Fi provisioning** (IOTMER GATT v1, NimBLE) lives in the sibling component [`../iotmer_ble_wifi_prov/`](../iotmer_ble_wifi_prov/) with public API `iotmer_ble_wifi_prov.h` and English protocol notes under `docs/sdk/esp-idf/ble-wifi-provisioning.md`.
+
 ## GitHub
 
 - Repo: `https://github.com/iotmertech/iotmer-sdk-esp-idf`
@@ -78,6 +80,7 @@ Bundled ESP-IDF examples (also indexed by the ESP Component Registry **Examples*
 - `examples/02_telemetry`
 - `examples/03_lwt_presence`
 - `examples/04_config`
+- `examples/05_ble_wifi_prov` — optional **BLE** Wi‑Fi credential provisioning ([`iotmer_ble_wifi_prov`](../iotmer_ble_wifi_prov/README.md), protocol: [`docs/sdk/esp-idf/ble-wifi-provisioning.md`](../docs/sdk/esp-idf/ble-wifi-provisioning.md))
 
 Canonical copies in the main repository:
 
@@ -86,4 +89,5 @@ Canonical copies in the main repository:
 - Telemetry: `https://github.com/iotmertech/iotmer-sdk-esp-idf/tree/main/examples/02_telemetry`
 - LWT / presence: `https://github.com/iotmertech/iotmer-sdk-esp-idf/tree/main/examples/03_lwt_presence`
 - Config: `https://github.com/iotmertech/iotmer-sdk-esp-idf/tree/main/examples/04_config`
+- BLE Wi‑Fi provisioning: `https://github.com/iotmertech/iotmer-sdk-esp-idf/tree/main/examples/05_ble_wifi_prov`
 

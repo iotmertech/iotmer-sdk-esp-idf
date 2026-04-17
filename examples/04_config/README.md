@@ -12,13 +12,25 @@ For the complete topic/payload contract (field-by-field), see the docs page:
 
 ## First build
 
-This example pulls `espressif/zlib` via the component manager (used for gzip inflate). If `dependencies.lock` is not present yet:
+This example pulls `espressif/zlib` via the component manager (used for gzip inflate). If `dependencies.lock` is not present yet, `cd` into this example (same `main/` exists in both tree locations below), then build:
+
+**Monorepo (recommended):**
 
 ```bash
 cd examples/04_config
 idf.py set-target esp32c3     # or your target SoC
 idf.py build                  # generates managed_components/ + dependencies.lock
 ```
+
+**Same example under the component tree** (`components/iotmer/examples/04_config`, also copied into published `iotmer` packages under `examples/04_config`):
+
+```bash
+cd components/iotmer/examples/04_config
+idf.py set-target esp32c3
+idf.py build
+```
+
+`examples/04_config/CMakeLists.txt` sets `EXTRA_COMPONENT_DIRS` so the sibling `components/iotmer` sources are used. The bundled `CMakeLists.txt` under `components/iotmer/examples/` is for the Component Registry layout.
 
 Committing `dependencies.lock` is recommended for CI and reproducible builds.
 
