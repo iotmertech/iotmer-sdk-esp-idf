@@ -42,6 +42,13 @@ typedef struct {
 
     int keepalive_sec;
     int reconnect_delay_ms;
+
+    /**
+     * Presence (LWT) feature:
+     * - On connect: publish retained "ONLINE" to {workspace_slug}/{device_key}/presence/
+     * - On unexpected disconnect: broker publishes retained "OFFLINE" (MQTT last will) to same topic
+     */
+    bool presence_lwt_enable;
 } iotmer_config_t;
 
 #define IOTMER_CONFIG_DEFAULT()         \
@@ -50,6 +57,7 @@ typedef struct {
         .tls = true,                    \
         .keepalive_sec = 60,            \
         .reconnect_delay_ms = 5000,     \
+        .presence_lwt_enable = false,   \
     }
 
 typedef struct iotmer_client_s iotmer_client_t;
@@ -69,6 +77,9 @@ struct iotmer_client_s {
 
     void *reconnect_timer; /* esp_timer_handle_t */
 
+    /* Presence/LWT topic buffer (must outlive esp_mqtt_client_config_t). */
+    char presence_topic[256];
+
     /**
      * After CONNACK auth failure (rc 4/5), reconnect uses this delay (ms) instead of
      * reconnect_delay_ms, doubling up to 5 minutes to avoid broker flapping / bans.
@@ -83,11 +94,14 @@ void      iotmer_disconnect(iotmer_client_t *client);
 
 esp_err_t iotmer_telemetry_publish(iotmer_client_t *client, const char *json);
 esp_err_t iotmer_state_publish(iotmer_client_t *client, const char *json);
+esp_err_t iotmer_presence_publish(iotmer_client_t *client, const char *status);
 
 esp_err_t iotmer_subscribe_commands(iotmer_client_t *client,
                                    iotmer_message_cb_t cb, void *ctx);
 esp_err_t iotmer_subscribe_config(iotmer_client_t *client,
                                  iotmer_message_cb_t cb, void *ctx);
+
+/** MQTT Config Protocol v1 (meta / get / resp / status): see `iotmer_config.h`. */
 
 #ifdef __cplusplus
 }

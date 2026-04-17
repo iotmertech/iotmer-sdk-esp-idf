@@ -264,6 +264,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
         }
         ESP_LOGI(TAG, "MQTT connected");
 
+        /* Presence/LWT: on every connect, publish retained ONLINE. */
+        if (client->cfg.presence_lwt_enable) {
+            esp_err_t e = iotmer_presence_publish(client, "ONLINE");
+            if (e != ESP_OK) {
+                ESP_LOGW(TAG, "presence ONLINE publish failed: %s", esp_err_to_name(e));
+            }
+        }
+
         /*
          * Resubscribe after every (re)connect.
          * MQTT brokers with clean-session semantics drop all subscriptions
@@ -585,6 +593,23 @@ esp_err_t iotmer_connect(iotmer_client_t *client)
         .session.keepalive                    = client->cfg.keepalive_sec,
         .network.disable_auto_reconnect       = true, /* we handle reconnect manually */
     };
+
+    if (client->cfg.presence_lwt_enable) {
+        /* MQTT LWT must reference memory that lives at least until client stop/destroy. */
+        err = iotmer_topics_build_publish(client->presence_topic, sizeof(client->presence_topic),
+                                          client->creds.workspace_slug,
+                                          client->creds.device_key,
+                                          "presence/");
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "presence topic build failed: %s", esp_err_to_name(err));
+            goto fail_timer;
+        }
+
+        mcfg.session.last_will.topic  = client->presence_topic;
+        mcfg.session.last_will.msg    = "OFFLINE";
+        mcfg.session.last_will.qos    = 1;
+        mcfg.session.last_will.retain = 1;
+    }
 
     if (client->cfg.tls) {
         /* Use the bundled Mozilla CA root store; no custom cert needed. */

@@ -7,4 +7,6 @@ dependencies:
   espressif/cjson: "^1.7.19"
   # ESP-IDF v6+: ESP-MQTT moved out of core — use managed MQTT client.
   espressif/mqtt: "*"
+  # Config protocol v1: gzip inflate (RFC1952) for `gzip+base64` responses.
+  espressif/zlib: "1.3.2"
 

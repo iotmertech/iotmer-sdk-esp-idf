@@ -6,6 +6,8 @@ Reference applications for this repository’s `iotmer` component. **More exampl
 |-----------|------|
 | [`01_provisioning`](01_provisioning/) | Factory bring-up: HTTPS provision, NVS save, optional OTA. No MQTT client. |
 | [`02_telemetry`](02_telemetry/) | Field-style app: MQTT connect, subscribe, telemetry loop. |
+| [`03_lwt_presence`](03_lwt_presence/) | Retained presence + MQTT last-will ONLINE/OFFLINE. |
+| [`04_config`](04_config/) | MQTT Config Protocol v1: `config/meta` → `config/get` → `config/resp` (gzip+base64 chunks) → `config/status`. |
 
 ## Prerequisites
 
@@ -17,7 +19,7 @@ Reference applications for this repository’s `iotmer` component. **More exampl
 `build/`, `managed_components/`, and per-example `sdkconfig` are not committed (see repo `.gitignore`). After clone:
 
 ```bash
-cd examples/01_provisioning   # or 02_telemetry
+cd examples/01_provisioning   # or 02_telemetry / 04_config / …
 idf.py set-target esp32c3     # or esp32, esp32s3, …
 idf.py build
 ```
@@ -63,11 +65,13 @@ MQTT topics follow the **console** ACL pattern `{workspace_slug}/{device_key}/�
 ```
 components/iotmer/
 ├── include/iotmer_client.h   ← public API
+├── include/iotmer_config.h   ← config protocol v1 API
 ├── iotmer_client.c           ← init / connect / MQTT
 ├── iotmer_provision.c        ← HTTPS provision
 ├── iotmer_nvs.c              ← credentials NVS
 ├── iotmer_ota.c              ← HTTPS OTA (Kconfig)
 ├── iotmer_telemetry.c        ← publish helpers
+├── iotmer_config.c           ← MQTT Config Protocol v1 (device)
 ├── iotmer_topics.c           ← topic strings
 └── iotmer_wifi.c             ← STA connect
 ```

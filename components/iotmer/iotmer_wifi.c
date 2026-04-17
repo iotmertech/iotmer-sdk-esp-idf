@@ -23,9 +23,11 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "nvs.h"
 #include "sdkconfig.h"
 
 #include "iotmer_internal.h"
+#include "iotmer_wifi.h"
 
 #define TAG "iotmer_wifi"
 
@@ -34,10 +36,166 @@
 #define WIFI_MAX_RETRY     10
 #define WIFI_CONNECT_TIMEOUT_MS 30000
 
+/* Keep keys ≤15 chars (ESP-IDF NVS limit). */
+#define IOTMER_WIFI_NVS_KEY_SSID "wifi_ssid"
+#define IOTMER_WIFI_NVS_KEY_PASS "wifi_pass"
+
 static EventGroupHandle_t s_event_group;
 static int                s_retry_num;
 static bool               s_inited;
 static bool               s_connected;
+
+static esp_err_t nvs_get_str_safe(nvs_handle_t h, const char *key, char *out, size_t out_len)
+{
+    if (!key || !out || out_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    size_t required = 0;
+    esp_err_t err = nvs_get_str(h, key, NULL, &required);
+    if (err != ESP_OK) {
+        return err;
+    }
+    if (required == 0 || required > out_len) {
+        return ESP_ERR_NO_MEM;
+    }
+    return nvs_get_str(h, key, out, &required);
+}
+
+static esp_err_t wifi_creds_load_from_nvs(char *ssid_out,
+                                         size_t ssid_out_len,
+                                         char *pass_out,
+                                         size_t pass_out_len)
+{
+    if (!ssid_out || ssid_out_len == 0 || !pass_out || pass_out_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ssid_out[0] = '\0';
+    pass_out[0] = '\0';
+
+    nvs_handle_t h = 0;
+    esp_err_t err = nvs_open(CONFIG_IOTMER_NVS_NAMESPACE, NVS_READONLY, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    esp_err_t e1 = nvs_get_str_safe(h, IOTMER_WIFI_NVS_KEY_SSID, ssid_out, ssid_out_len);
+    esp_err_t e2 = nvs_get_str_safe(h, IOTMER_WIFI_NVS_KEY_PASS, pass_out, pass_out_len);
+    nvs_close(h);
+
+    if (e1 != ESP_OK || e2 != ESP_OK || ssid_out[0] == '\0') {
+        ssid_out[0] = '\0';
+        pass_out[0] = '\0';
+        return ESP_ERR_NOT_FOUND;
+    }
+    return ESP_OK;
+}
+
+static void wifi_creds_save_to_nvs_if_possible(const char *ssid, const char *pass)
+{
+    if (!ssid || ssid[0] == '\0' || !pass) {
+        return;
+    }
+
+    nvs_handle_t h = 0;
+    esp_err_t err = nvs_open(CONFIG_IOTMER_NVS_NAMESPACE, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return;
+    }
+
+    bool changed = false;
+
+    char have_ssid[sizeof(((wifi_config_t *)0)->sta.ssid)] = {0};
+    char have_pass[sizeof(((wifi_config_t *)0)->sta.password)] = {0};
+    esp_err_t e1 = nvs_get_str_safe(h, IOTMER_WIFI_NVS_KEY_SSID, have_ssid, sizeof(have_ssid));
+    esp_err_t e2 = nvs_get_str_safe(h, IOTMER_WIFI_NVS_KEY_PASS, have_pass, sizeof(have_pass));
+
+    if (e1 != ESP_OK || strcmp(have_ssid, ssid) != 0) {
+        if (nvs_set_str(h, IOTMER_WIFI_NVS_KEY_SSID, ssid) == ESP_OK) {
+            changed = true;
+        }
+    }
+    if (e2 != ESP_OK || strcmp(have_pass, pass) != 0) {
+        if (nvs_set_str(h, IOTMER_WIFI_NVS_KEY_PASS, pass) == ESP_OK) {
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        (void)nvs_commit(h);
+    }
+    nvs_close(h);
+}
+
+esp_err_t iotmer_wifi_set_credentials(const char *ssid, const char *password)
+{
+    if (!ssid || ssid[0] == '\0' || !password) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t h = 0;
+    esp_err_t err = nvs_open(CONFIG_IOTMER_NVS_NAMESPACE, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = nvs_set_str(h, IOTMER_WIFI_NVS_KEY_SSID, ssid);
+    if (err != ESP_OK) goto out;
+
+    err = nvs_set_str(h, IOTMER_WIFI_NVS_KEY_PASS, password);
+    if (err != ESP_OK) goto out;
+
+    err = nvs_commit(h);
+
+out:
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t iotmer_wifi_get_credentials(char *ssid_out, size_t ssid_out_len,
+                                      char *password_out, size_t password_out_len)
+{
+    return wifi_creds_load_from_nvs(ssid_out, ssid_out_len, password_out, password_out_len);
+}
+
+esp_err_t iotmer_wifi_clear_credentials(void)
+{
+    nvs_handle_t h = 0;
+    esp_err_t err = nvs_open(CONFIG_IOTMER_NVS_NAMESPACE, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    /* Ignore NOT_FOUND to keep this idempotent. */
+    esp_err_t e1 = nvs_erase_key(h, IOTMER_WIFI_NVS_KEY_SSID);
+    esp_err_t e2 = nvs_erase_key(h, IOTMER_WIFI_NVS_KEY_PASS);
+    if (e1 != ESP_OK && e1 != ESP_ERR_NVS_NOT_FOUND) err = e1;
+    if (err == ESP_OK && e2 != ESP_OK && e2 != ESP_ERR_NVS_NOT_FOUND) err = e2;
+
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t iotmer_wifi_reconnect(void)
+{
+    /* Force a reconnect on next connect call. */
+    s_connected = false;
+
+    /* Stop WiFi if it's running (ignore state errors). */
+    esp_err_t err = esp_wifi_disconnect();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STARTED) {
+        /* ignore */
+    }
+    err = esp_wifi_stop();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STARTED) {
+        /* ignore */
+    }
+
+    return iotmer_wifi_connect();
+}
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
@@ -117,15 +275,27 @@ esp_err_t iotmer_wifi_connect(void)
         return err;
     }
 
-    if (strlen(CONFIG_IOTMER_WIFI_SSID) == 0) {
-        ESP_LOGE(TAG, "CONFIG_IOTMER_WIFI_SSID is empty — set it in menuconfig");
-        return ESP_ERR_INVALID_STATE;
+    char ssid[sizeof(((wifi_config_t *)0)->sta.ssid)] = {0};
+    char pass[sizeof(((wifi_config_t *)0)->sta.password)] = {0};
+
+    /* Prefer WiFi creds persisted in NVS so OTA firmware doesn't need menuconfig. */
+    if (wifi_creds_load_from_nvs(ssid, sizeof(ssid), pass, sizeof(pass)) == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi credentials loaded from NVS (ns=%s)", CONFIG_IOTMER_NVS_NAMESPACE);
+    } else {
+        /* Fall back to Kconfig values (menuconfig). */
+        if (strlen(CONFIG_IOTMER_WIFI_SSID) == 0) {
+            ESP_LOGE(TAG, "CONFIG_IOTMER_WIFI_SSID is empty — set it in menuconfig (or store WiFi in NVS)");
+            return ESP_ERR_INVALID_STATE;
+        }
+        strncpy(ssid, CONFIG_IOTMER_WIFI_SSID, sizeof(ssid) - 1);
+        strncpy(pass, CONFIG_IOTMER_WIFI_PASSWORD, sizeof(pass) - 1);
+        wifi_creds_save_to_nvs_if_possible(ssid, pass);
     }
 
     wifi_config_t wifi_cfg = {0};
-    strncpy((char *)wifi_cfg.sta.ssid, CONFIG_IOTMER_WIFI_SSID,
+    strncpy((char *)wifi_cfg.sta.ssid, ssid,
             sizeof(wifi_cfg.sta.ssid) - 1);
-    strncpy((char *)wifi_cfg.sta.password, CONFIG_IOTMER_WIFI_PASSWORD,
+    strncpy((char *)wifi_cfg.sta.password, pass,
             sizeof(wifi_cfg.sta.password) - 1);
     wifi_cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
     wifi_cfg.sta.pmf_cfg.capable    = true;
@@ -147,7 +317,7 @@ esp_err_t iotmer_wifi_connect(void)
         return err;
     }
 
-    ESP_LOGI(TAG, "Connecting to SSID: %s ...", CONFIG_IOTMER_WIFI_SSID);
+    ESP_LOGI(TAG, "Connecting to SSID: %s ...", ssid);
 
     EventBits_t bits = xEventGroupWaitBits(
         s_event_group,

@@ -5,6 +5,7 @@
  *
  *   {workspace_slug}/{device_key}/telemetry   publish
  *   {workspace_slug}/{device_key}/state       publish
+ *   {workspace_slug}/{device_key}/presence/   publish (retained, ONLINE/OFFLINE)
  *   {workspace_slug}/{device_key}/cmd/#       subscribe
  *   {workspace_slug}/{device_key}/config/#    subscribe
  *
