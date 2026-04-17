@@ -33,7 +33,7 @@ iotmer_subscribe_commands(&client, on_command, NULL);
 
 ```yaml
 dependencies:
-  iotmertech/iotmer-sdk-esp-idf: "*"
+  iotmertech/iotmer: "*"
 ```
 
 ```bash
