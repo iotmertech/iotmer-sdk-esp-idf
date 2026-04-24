@@ -1,0 +1,50 @@
+menu "BLE Manager Defaults"
+
+    config CUSTOM_BLE_MANAGER_BT_DEFAULTS
+        bool "Enable Bluetooth defaults for ble_manager"
+        default y
+        help
+            BLE manager componentinin varsayilan ayarlarini etkinlestirir.
+            Etkin oldugunda proje ilk konfigrasyonda Bluetooth + NimBLE secili gelir.
+
+if CUSTOM_BLE_MANAGER_BT_DEFAULTS
+
+    config BT_ENABLED
+        default y
+
+    choice BT_HOST
+        default BT_NIMBLE_ENABLED
+    endchoice
+
+    choice BT_CONTROLLER
+        default BT_CONTROLLER_ENABLED
+    endchoice
+
+    choice BT_NIMBLE_MEM_ALLOC_MODE
+        default BT_NIMBLE_MEM_ALLOC_MODE_INTERNAL
+    endchoice
+
+    config BT_NIMBLE_HOST_TASK_STACK_SIZE
+        default 4096
+
+    config BT_NIMBLE_ROLE_CENTRAL
+        default y
+
+    config BT_NIMBLE_ROLE_PERIPHERAL
+        default y
+
+    config BT_NIMBLE_ROLE_BROADCASTER
+        default y
+
+    config BT_NIMBLE_ROLE_OBSERVER
+        default y
+
+    config BT_NIMBLE_GATT_CLIENT
+        default y
+
+    config BT_NIMBLE_GATT_SERVER
+        default y
+
+endif
+
+endmenu

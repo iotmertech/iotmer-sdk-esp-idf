@@ -1,0 +1,5 @@
+version: "0.1.0"
+description: "JSON Data Over Bluetooth BLE"
+dependencies:
+  idf:
+    version: ">=5.0" # Hangi ESP-IDF sürümleriyle uyumlu?
