@@ -12,6 +12,14 @@
 extern "C" {
 #endif
 
+/**
+ * @brief Type definition for the BLE data handler callback. This callback is invoked with JSON payloads received over BLE.
+ * 
+ * @param value The JSON payload received over BLE.
+ * @return A pointer to a null-terminated string to be sent back to the BLE client, or NULL if no response is needed. 
+ * @important if return data is not NULL then return data send automatically over bluetooth to client. If return data 
+ * is NULL then nothing send to client.
+ */
 typedef char *(*ble_data_handler_t)(char *value);
 
 /**

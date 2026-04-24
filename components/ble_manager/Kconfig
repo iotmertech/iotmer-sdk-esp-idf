@@ -4,8 +4,8 @@ menu "BLE Manager Defaults"
         bool "Enable Bluetooth defaults for ble_manager"
         default y
         help
-            BLE manager componentinin varsayilan ayarlarini etkinlestirir.
-            Etkin oldugunda proje ilk konfigrasyonda Bluetooth + NimBLE secili gelir.
+            Enables the default settings for the BLE manager component. 
+            When enabled, the project defaults to ‘Bluetooth + NimBLE’ in the initial configuration.
 
 if CUSTOM_BLE_MANAGER_BT_DEFAULTS
 
