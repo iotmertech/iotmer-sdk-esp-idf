@@ -1,5 +1,7 @@
 # Example 05 — BLE Wi‑Fi provisioning + claim + bind
 
+**Registry:** the same project is also shipped under **`components/iotmer/examples/05_ble_wifi_prov/`** for the [ESP Component Registry](https://components.espressif.com/) **Examples** tab (`iotmertech/iotmer`). When you change `main/`, `sdkconfig.defaults`, or Kconfig here, update that copy too.
+
 ESP-IDF sample using **`iotmer_ble_wifi_prov`** (NimBLE GATT **protocol v1**) for STA **SSID/password**, optional **Claim** JSON (`claim.set` / `claim.ack` on UUID `…0404…`), then:
 
 1. **`iotmer_wifi_reconnect()`** and **`iotmer_ble_wifi_prov_stop()`**

@@ -8,8 +8,9 @@ Each example is a standalone ESP-IDF project (mirrored here for the **ESP Compon
 - `02_telemetry/`
 - `03_lwt_presence/`
 - `04_config/` — MQTT Config Protocol v1 (`config/meta`, `config/get`, chunked `config/resp`, `config/status`)
+- `05_ble_wifi_prov/` — NimBLE + IOTMER GATT v1 + optional **Claim** + HTTPS provision + **bind-claim** (depends on **`iotmertech/iotmer_ble_wifi_prov`** from the registry; see that example’s `idf_component.yml`)
 
-**`05_ble_wifi_prov` is not packaged** under this folder: it depends on the sibling component **`iotmer_ble_wifi_prov`** and lives only in the **monorepo** tree below. When changing examples, update **`examples/05_ble_wifi_prov/`** on GitHub; keep **`components/iotmer/examples/01`–`04`** in sync with **`examples/01`–`04`** when their `sdkconfig.defaults`, `main`, or CMake diverge.
+When changing examples, keep **`components/iotmer/examples/*`** in sync with the **monorepo** copies under **`examples/*`** (same `main/`, `sdkconfig.defaults`, and Kconfig) — see each pair’s `README` for the dev path with **local** `components/`.
 
 The canonical source for all examples:
 

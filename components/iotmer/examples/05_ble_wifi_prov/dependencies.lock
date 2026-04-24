@@ -44,7 +44,7 @@ dependencies:
     - name: espressif/zlib
       version: 1.3.2
     source:
-      path: ../../components/iotmer
+      path: ../..
       type: local
     targets:
     - esp32

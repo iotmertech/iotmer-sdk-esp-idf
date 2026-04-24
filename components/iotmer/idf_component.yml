@@ -1,5 +1,5 @@
 name: "iotmer"
-version: "0.1.10"
+version: "0.1.12"
 description: "IOTMER IoT Platform SDK for ESP-IDF"
 license: "MIT"
 url: "https://github.com/iotmertech/iotmer-sdk-esp-idf"
@@ -10,6 +10,7 @@ tags:
   - "mqtt"
   - "provisioning"
   - "ota"
+  - "ble"
 targets:
   - "esp32"
   - "esp32s2"
