@@ -1,5 +1,30 @@
+name: "iotmer"
 version: "0.1.0"
-description: "JSON Data Over Bluetooth BLE"
+description: "JSON Data Over Bluetooth BLE IOTMER IoT Platform SDK for ESP-IDF"
+license: "MIT"
+url: "https://github.com/iotmertech/iotmer-sdk-esp-idf"
+maintainers:
+  - "IOTMER Tech <support@iotmer.com>"
+tags:
+  - "iot"
+  - "mqtt"
+  - "provisioning"
+  - "ota"
+targets:
+  - "esp32"
+  - "esp32s2"
+  - "esp32s3"
+  - "esp32c3"
+  - "esp32c6"
+files:
+  include:
+    - "CMakeLists.txt"
+    - "Kconfig.projbuild"
+    - "README.md"
+    - "LICENSE"
+    - "examples/**"
+    - "*.c"
+    - "*.h"
+    - "include/**"
 dependencies:
-  idf:
-    version: ">=5.0" # Hangi ESP-IDF sürümleriyle uyumlu?
+  idf: ">=5.0.0"
