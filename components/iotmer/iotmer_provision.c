@@ -243,6 +243,7 @@ esp_err_t iotmer_provision(iotmer_creds_t *out, bool *https_performed)
     memcpy(out->firmware_applied_sha256, backup.firmware_applied_sha256,
            sizeof(out->firmware_applied_sha256));
     memcpy(out->workspace_slug, backup.workspace_slug, sizeof(out->workspace_slug));
+    memcpy(out->device_http_token, backup.device_http_token, sizeof(out->device_http_token));
 
     char url[384];
     int n = snprintf(url, sizeof(url), "%s/provision/device", CONFIG_IOTMER_PROVISION_API_URL);
@@ -363,6 +364,18 @@ esp_err_t iotmer_provision(iotmer_creds_t *out, bool *https_performed)
     }
 
     {
+        esp_err_t dht_e = json_copy_string(jr, "device_http_token", out->device_http_token,
+                                           sizeof(out->device_http_token));
+        if (dht_e == ESP_ERR_NOT_FOUND && inner) {
+            dht_e = json_copy_string(inner, "device_http_token", out->device_http_token,
+                                      sizeof(out->device_http_token));
+        }
+        if (dht_e != ESP_OK && dht_e != ESP_ERR_NOT_FOUND) {
+            ESP_LOGW(TAG, "device_http_token parse: %s", esp_err_to_name(dht_e));
+        }
+    }
+
+    {
         esp_err_t slug_e = json_copy_string(jr, "workspace_slug", out->workspace_slug,
                                             sizeof(out->workspace_slug));
         if (slug_e == ESP_ERR_NOT_FOUND && inner) {
@@ -394,6 +407,8 @@ esp_err_t iotmer_provision(iotmer_creds_t *out, bool *https_performed)
                  out->mqtt_host, out->mqtt_port, out->mqtt_tls ? "yes" : "no",
                  out->mqtt_username, pwlen, pw_changed ? "changed_or_new" : "same_as_before");
     }
+    /* Never log the token; bind-claim / device-auth need NVS "dht" or a new JSON value. */
+    ESP_LOGI(TAG, "device_http_token: %s", out->device_http_token[0] != '\0' ? "set" : "absent");
 
     if (https_performed) {
         *https_performed = true;

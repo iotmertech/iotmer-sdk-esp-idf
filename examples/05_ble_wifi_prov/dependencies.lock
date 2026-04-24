@@ -52,13 +52,13 @@ dependencies:
     - esp32s3
     - esp32c3
     - esp32c6
-    version: 0.1.8
+    version: 0.1.10
 direct_dependencies:
 - espressif/cjson
 - espressif/mqtt
 - espressif/zlib
 - idf
 - iotmer
-manifest_hash: 051d2d7c5ef0652cff8d55abda017e2294ffef48c7a1e852ab79cc6bcf1d9262
+manifest_hash: a50ed03b5762fece6924fc18ee9cf6ca8e11ac77db9499b359306ee89858989f
 target: esp32c3
 version: 3.0.0

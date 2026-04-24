@@ -1,6 +1,6 @@
 # `iotmer_ble_wifi_prov` (optional ESP-IDF component)
 
-**IOTMER BLE Wi‑Fi provisioning** — NimBLE GATT server implementing **protocol v1**: transfer Wi‑Fi STA SSID/password from a phone or PC to the device, then persist via `iotmer_wifi_set_credentials()` (same NVS layout as the core `iotmer` component).
+**IOTMER BLE Wi‑Fi provisioning** — NimBLE GATT server implementing **protocol v1**: transfer Wi‑Fi STA SSID/password from a phone or PC to the device, then persist via `iotmer_wifi_set_credentials()` (same NVS layout as the core `iotmer` component). Optional **Claim** characteristic (`…0404…`) accepts JSON `claim.set` for a RAM-only `claim_code` (for `iotmer_device_auth_bind_claim` after HTTPS provision). The **`on_result`** callback runs on a **dedicated high-stack task** (not the NimBLE worker), so it is safe to start Wi‑Fi reconnect, HTTPS provision, and bind-claim from there — see the protocol doc.
 
 This component is **optional**: applications add it via `EXTRA_COMPONENT_DIRS` or a local path dependency and `REQUIRES iotmer_ble_wifi_prov`. It does **not** replace Espressif `wifi_prov_mgr` or its phone apps; the byte layout is IOTMER-specific.
 

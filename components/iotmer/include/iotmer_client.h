@@ -32,6 +32,14 @@ typedef struct {
     char mqtt_username[96];
     char mqtt_password[96];
 
+    /**
+     * Opaque `device_http_token` (`dht_…`) from `POST /provision/device`.
+     * Use only for device-auth HTTP routes under `…/devices/auth/` (e.g. bind-claim) with Bearer.
+     * Persisted in NVS as key "dht" when set. If NVS dht is empty, @c IOTMER_DEVICE_HTTP_TOKEN
+     * (Kconfig) may be used as a dev fallback when loading creds. Not used for MQTT.
+     */
+    char device_http_token[384];
+
     /** Workspace slug from provision JSON; MQTT ACL topics: {workspace_slug}/{device_key}/… */
     char workspace_slug[64];
 } iotmer_creds_t;
@@ -102,6 +110,34 @@ esp_err_t iotmer_subscribe_config(iotmer_client_t *client,
                                  iotmer_message_cb_t cb, void *ctx);
 
 /** MQTT Config Protocol v1 (meta / get / resp / status): see `iotmer_config.h`. */
+
+/**
+ * Load persisted IOTMER credentials from NVS (namespace from Kconfig `IOTMER_NVS_NAMESPACE`).
+ */
+esp_err_t iotmer_nvs_load_creds(iotmer_creds_t *out);
+
+/**
+ * Store credentials in NVS (replaces same keys; includes `device_http_token` when non-empty).
+ */
+esp_err_t iotmer_nvs_save_creds(const iotmer_creds_t *creds);
+
+/**
+ * HTTPS device provisioning: `POST {IOTMER_PROVISION_API_URL}/provision/device` with
+ * `iotmer-auth-code`. Fills @p creds (MQTT, `device_http_token` / NVS `dht`, firmware metadata,
+ * etc.) from the JSON body (root or nested `data` where supported). Current API responses
+ * typically include `device_http_token` (`dht_…`); it is required for
+ * `iotmer_device_auth_bind_claim()`.
+ * When `IOTMER_PROVISION_AUTH_CODE` is empty and NVS already has a full session, returns ESP_OK
+ * without HTTP (see `https_performed`). See public provisioning docs.
+ */
+esp_err_t iotmer_provision(iotmer_creds_t *creds, bool *https_performed);
+
+/**
+ * `POST {base}/devices/auth/bind-claim` with `Authorization: Bearer` @p creds->device_http_token`
+ * and JSON body `{"claim_code": ... }`. @p claim_code is typically from BLE (see `iotmer_ble_wifi_prov`).
+ * **Do not** log @p creds or @p claim_code; clear sensitive buffers after use in product code.
+ */
+esp_err_t iotmer_device_auth_bind_claim(const iotmer_creds_t *creds, const char *claim_code);
 
 #ifdef __cplusplus
 }

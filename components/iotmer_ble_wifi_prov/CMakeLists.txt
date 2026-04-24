@@ -4,6 +4,6 @@
 idf_component_register(
     SRCS "iotmer_ble_wifi_prov.c"
     INCLUDE_DIRS "include"
-    REQUIRES bt esp_timer iotmer nvs_flash freertos esp_common
+    REQUIRES bt esp_timer iotmer nvs_flash freertos esp_common cjson
     PRIV_REQUIRES bt
 )

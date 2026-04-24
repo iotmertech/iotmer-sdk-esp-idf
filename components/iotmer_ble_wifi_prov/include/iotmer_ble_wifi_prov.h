@@ -34,11 +34,15 @@ extern "C" {
 #define IOTMER_BLE_WIFI_PROV_UUID_CTRL_STR "1d14d6ee-0101-4000-8024-b5a3c0ffee01"
 #define IOTMER_BLE_WIFI_PROV_UUID_DATA_STR "1d14d6ee-0202-4000-8024-b5a3c0ffee01"
 #define IOTMER_BLE_WIFI_PROV_UUID_EVT_STR  "1d14d6ee-0303-4000-8024-b5a3c0ffee01"
+/** UTF-8 JSON: `{"type":"claim.set","claim_code":"…"}` (v2 claim channel; write-only). */
+#define IOTMER_BLE_WIFI_PROV_UUID_CLAIM_STR "1d14d6ee-0404-4000-8024-b5a3c0ffee01"
 
 /** IEEE 802.11 SSID octet limit (UTF-8). */
 #define IOTMER_BLE_WIFI_PROV_SSID_MAX 32u
 /** ESP-IDF @c wifi_sta_config_t password field size minus NUL. */
 #define IOTMER_BLE_WIFI_PROV_PASS_MAX 63u
+/** Max @c claim_code length (NUL-terminated buffer); not stored in NVS. */
+#define IOTMER_BLE_WIFI_PROV_CLAIM_MAX 256u
 
 /** First byte of Control characteristic writes (v1). */
 typedef enum {
@@ -71,6 +75,8 @@ typedef enum {
     IOTMER_BLE_WIFI_PROV_ERR_NVS             = 9u,
     IOTMER_BLE_WIFI_PROV_ERR_INTERNAL        = 10u,
     IOTMER_BLE_WIFI_PROV_ERR_DISCONNECTED    = 11u,
+    IOTMER_BLE_WIFI_PROV_ERR_CLAIM_JSON      = 12u,
+    IOTMER_BLE_WIFI_PROV_ERR_CLAIM_CODE_LEN  = 13u,
 } iotmer_ble_wifi_prov_err_t;
 
 /** High-level session state for @ref iotmer_ble_wifi_prov_cfg_t.on_state. */
@@ -91,7 +97,10 @@ typedef struct iotmer_ble_wifi_prov_cfg {
     void (*on_state)(void *user_ctx, iotmer_ble_wifi_prov_state_t state);
 
     /**
-     * Optional; invoked after COMMIT attempts.
+     * Optional; invoked after COMMIT (or on session/adv failure) on a dedicated high-stack
+     * task (not the NimBLE @c "iotmer_ble_prov" worker), so the handler may start Wi-Fi,
+     * HTTPS, TLS, and other heavy work.
+     *
      * @param esp_err Result of @ref iotmer_wifi_set_credentials (ESP_OK on success).
      * @param detail Structured BLE protocol error (IOTMER_BLE_WIFI_PROV_ERR_NONE on success).
      */
@@ -124,6 +133,22 @@ esp_err_t iotmer_ble_wifi_prov_init(const iotmer_ble_wifi_prov_cfg_t *cfg);
 
 /** Tear down BLE host (call @ref iotmer_ble_wifi_prov_stop first). */
 void iotmer_ble_wifi_prov_deinit(void);
+
+/**
+ * After a valid **Claim** JSON write (`claim.set`), a copy of @c claim_code is kept in RAM
+ * (cleared on @ref iotmer_ble_wifi_prov_clear_claim_code or a successful newer `claim.set`).
+ * @return @c true if a code is available for @ref iotmer_ble_wifi_prov_get_claim_code.
+ */
+bool iotmer_ble_wifi_prov_has_claim_code(void);
+
+/**
+ * Copy the pending @c claim_code (e.g. for `POST /devices/auth/bind-claim`). Does not clear it.
+ * @return ESP_ERR_NOT_FOUND if no claim was set this session, ESP_ERR_NO_MEM if @p out_len too small.
+ */
+esp_err_t iotmer_ble_wifi_prov_get_claim_code(char *out, size_t out_len);
+
+/** Clear RAM copy (e.g. after a successful bind-claim). */
+void iotmer_ble_wifi_prov_clear_claim_code(void);
 
 /**
  * Begin connectable advertising using GAP name prefix from Kconfig + short suffix.

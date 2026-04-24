@@ -6,6 +6,7 @@ idf_component_register(
         "iotmer_topics.c"
         "iotmer_config.c"
         "iotmer_provision.c"
+        "iotmer_device_auth.c"
         "iotmer_nvs.c"
         "iotmer_wifi.c"
         "iotmer_ota.c"

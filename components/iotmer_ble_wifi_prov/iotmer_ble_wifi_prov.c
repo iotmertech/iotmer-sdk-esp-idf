@@ -22,6 +22,20 @@ esp_err_t iotmer_ble_wifi_prov_start(void) { return ESP_ERR_NOT_SUPPORTED; }
 
 esp_err_t iotmer_ble_wifi_prov_stop(void) { return ESP_OK; }
 
+bool iotmer_ble_wifi_prov_has_claim_code(void)
+{
+    return false;
+}
+
+esp_err_t iotmer_ble_wifi_prov_get_claim_code(char *out, size_t out_len)
+{
+    (void)out;
+    (void)out_len;
+    return ESP_ERR_NOT_FOUND;
+}
+
+void iotmer_ble_wifi_prov_clear_claim_code(void) {}
+
 #else
 
 #include <string.h>
@@ -42,6 +56,8 @@ esp_err_t iotmer_ble_wifi_prov_stop(void) { return ESP_OK; }
 #include "host/ble_hs_id.h"
 #include "host/ble_uuid.h"
 #include "host/util/util.h"
+
+#include "cJSON.h"
 
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
@@ -73,13 +89,32 @@ static const ble_uuid128_t s_uuid_data = BLE_UUID128_INIT(
 static const ble_uuid128_t s_uuid_evt = BLE_UUID128_INIT(
     0xee, 0xd6, 0x14, 0x1d, 0x03, 0x03, 0x00, 0x40, 0x80, 0x24, 0xb5, 0xa3, 0xc0, 0xff, 0xee, 0x01);
 
+static const ble_uuid128_t s_uuid_claim = BLE_UUID128_INIT(
+    0xee, 0xd6, 0x14, 0x1d, 0x04, 0x04, 0x00, 0x40, 0x80, 0x24, 0xb5, 0xa3, 0xc0, 0xff, 0xee, 0x01);
+
 static uint16_t s_chr_evt_val_handle;
 
-static QueueHandle_t    s_q;
-static TaskHandle_t     s_worker;
+static char s_pending_claim[IOTMER_BLE_WIFI_PROV_CLAIM_MAX];
+static bool s_has_pending_claim;
+
+/** on_result can run Wi-Fi/TLS; keep it off the thin NimBLE worker task stack. */
+#define IOTMER_BLE_RESULT_Q_DEPTH 4u
+#define IOTMER_BLE_RESULT_CB_STACK  (12 * 1024)
+
+static QueueHandle_t     s_q;
+static TaskHandle_t      s_worker;
 static SemaphoreHandle_t s_worker_exit_sem;
+static QueueHandle_t     s_result_q;
+static TaskHandle_t      s_result_task;
+static SemaphoreHandle_t s_result_exit_sem;
 static esp_timer_handle_t s_timer_idle;
 static esp_timer_handle_t s_timer_sess;
+
+typedef struct {
+    bool                       shutdown; /* if true, task exits; e/d ignored */
+    esp_err_t                  e;
+    iotmer_ble_wifi_prov_err_t d;
+} iotmer_ble_result_msg_t;
 
 static iotmer_ble_wifi_prov_cfg_t s_cfg;
 static bool                       s_inited;
@@ -110,6 +145,58 @@ static void reset_rx(void)
     s_pass_len  = 0;
 }
 
+static int notify_frame(uint16_t conn, uint8_t evt, uint16_t app_err, const void *payload, uint16_t pay_len);
+
+static int handle_claim_set_json(const char *json)
+{
+    cJSON *root = cJSON_Parse(json);
+    if (!root) {
+        return IOTMER_BLE_WIFI_PROV_ERR_CLAIM_JSON;
+    }
+    cJSON *t = cJSON_GetObjectItemCaseSensitive(root, "type");
+    if (!cJSON_IsString(t) || !t->valuestring || strcmp(t->valuestring, "claim.set") != 0) {
+        cJSON_Delete(root);
+        return IOTMER_BLE_WIFI_PROV_ERR_CLAIM_JSON;
+    }
+    cJSON *cc = cJSON_GetObjectItemCaseSensitive(root, "claim_code");
+    if (!cJSON_IsString(cc) || !cc->valuestring) {
+        cJSON_Delete(root);
+        return IOTMER_BLE_WIFI_PROV_ERR_CLAIM_JSON;
+    }
+    size_t n = strnlen(cc->valuestring, IOTMER_BLE_WIFI_PROV_CLAIM_MAX);
+    if (n == 0u || n >= IOTMER_BLE_WIFI_PROV_CLAIM_MAX) {
+        cJSON_Delete(root);
+        return IOTMER_BLE_WIFI_PROV_ERR_CLAIM_CODE_LEN;
+    }
+    memcpy(s_pending_claim, cc->valuestring, n);
+    s_pending_claim[n]  = '\0';
+    s_has_pending_claim = true;
+    cJSON_Delete(root);
+    return IOTMER_BLE_WIFI_PROV_ERR_NONE;
+}
+
+static void notify_claim_ack_json(uint16_t conn, bool ok, int detail_err)
+{
+    cJSON *a = cJSON_CreateObject();
+    if (!a) {
+        return;
+    }
+    (void)cJSON_AddStringToObject(a, "type", "claim.ack");
+    (void)cJSON_AddBoolToObject(a, "ok", ok);
+    if (!ok) {
+        (void)cJSON_AddNumberToObject(a, "err", (double)detail_err);
+    }
+    char *p   = cJSON_PrintUnformatted(a);
+    cJSON_Delete(a);
+    if (!p) {
+        return;
+    }
+    size_t plen = strlen(p);
+    (void)notify_frame(conn, IOTMER_BLE_WIFI_PROV_EVT_PROGRESS,
+                        (uint16_t)(ok ? 0 : detail_err), p, (uint16_t)plen);
+    cJSON_free(p);
+}
+
 static uint32_t eff_adv_ms(void)
 {
     if (s_cfg.adv_timeout_ms != 0u) {
@@ -134,6 +221,9 @@ static uint32_t eff_sess_ms(void)
     return (uint32_t)CONFIG_IOTMER_BLE_SESSION_MAX_MS;
 }
 
+static void result_cb_task(void *arg);
+static void stop_result_task_and_delete(void);
+
 static void emit_state(iotmer_ble_wifi_prov_state_t st)
 {
     if (s_cfg.on_state) {
@@ -143,9 +233,69 @@ static void emit_state(iotmer_ble_wifi_prov_state_t st)
 
 static void emit_result(esp_err_t e, iotmer_ble_wifi_prov_err_t d)
 {
-    if (s_cfg.on_result) {
-        s_cfg.on_result(s_cfg.user_ctx, e, d);
+    if (!s_cfg.on_result) {
+        return;
     }
+    if (!s_result_q) {
+        s_cfg.on_result(s_cfg.user_ctx, e, d);
+        return;
+    }
+    iotmer_ble_result_msg_t m = {
+        .shutdown = false,
+        .e = e,
+        .d = d,
+    };
+    if (xQueueSend(s_result_q, &m, pdMS_TO_TICKS(200)) != pdTRUE) {
+        ESP_LOGE(IOTMER_BLE_PROV_TAG, "on_result queue full; callback dropped");
+    }
+}
+
+static void result_cb_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        iotmer_ble_result_msg_t m;
+        if (xQueueReceive(s_result_q, &m, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        if (m.shutdown) {
+            break;
+        }
+        if (s_cfg.on_result) {
+            s_cfg.on_result(s_cfg.user_ctx, m.e, m.d);
+        }
+    }
+    if (s_result_exit_sem) {
+        (void)xSemaphoreGive(s_result_exit_sem);
+    }
+    s_result_task = NULL;
+    vTaskDelete(NULL);
+}
+
+static void stop_result_task_and_delete(void)
+{
+    if (!s_result_q || !s_result_exit_sem) {
+        s_result_task = NULL;
+        if (s_result_q) {
+            vQueueDelete(s_result_q);
+            s_result_q = NULL;
+        }
+        if (s_result_exit_sem) {
+            vSemaphoreDelete(s_result_exit_sem);
+            s_result_exit_sem = NULL;
+        }
+        return;
+    }
+    {
+        iotmer_ble_result_msg_t m = {.shutdown = true};
+        (void)xQueueSend(s_result_q, &m, pdMS_TO_TICKS(200));
+        (void)xSemaphoreTake(s_result_exit_sem, pdMS_TO_TICKS(2000));
+    }
+    s_result_task = NULL;
+    vQueueDelete(s_result_q);
+    s_result_q = NULL;
+    vSemaphoreDelete(s_result_exit_sem);
+    s_result_exit_sem = NULL;
 }
 
 static int notify_frame(uint16_t conn, uint8_t evt, uint16_t app_err, const void *payload, uint16_t pay_len)
@@ -154,7 +304,7 @@ static int notify_frame(uint16_t conn, uint8_t evt, uint16_t app_err, const void
         return 0;
     }
 
-    uint8_t buf[6 + 128];
+    uint8_t buf[6 + 384];
     if (pay_len > sizeof(buf) - 6u) {
         pay_len = (uint16_t)(sizeof(buf) - 6u);
     }
@@ -417,6 +567,24 @@ static int gatt_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_ga
         return 0;
     }
 
+    if (ble_uuid_cmp(u, &s_uuid_claim.u) == 0) {
+        iotmer_ble_q_msg_t m = {.kind = IOTMER_BLE_Q_GATT_CLAIM, .conn_handle = conn_handle};
+        uint16_t om_len      = OS_MBUF_PKTLEN(ctxt->om);
+        if (om_len == 0u || om_len > sizeof(m.data)) {
+            return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+        }
+        uint16_t copied = 0;
+        int      rcf    = ble_hs_mbuf_to_flat(ctxt->om, m.data, sizeof(m.data), &copied);
+        if (rcf != 0 || copied != om_len) {
+            return BLE_ATT_ERR_UNLIKELY;
+        }
+        m.len = copied;
+        if (s_q && xQueueSend(s_q, &m, pdMS_TO_TICKS(50)) != pdTRUE) {
+            return BLE_ATT_ERR_INSUFFICIENT_RES;
+        }
+        return 0;
+    }
+
     if (ble_uuid_cmp(u, &s_uuid_evt.u) == 0) {
         return BLE_ATT_ERR_READ_NOT_PERMITTED;
     }
@@ -433,6 +601,9 @@ static const struct ble_gatt_svc_def s_gatt_svcs[] = {
              .access_cb = gatt_access,
              .flags     = BLE_GATT_CHR_F_WRITE},
             {.uuid      = &s_uuid_data.u,
+             .access_cb = gatt_access,
+             .flags     = BLE_GATT_CHR_F_WRITE},
+            {.uuid      = &s_uuid_claim.u,
              .access_cb = gatt_access,
              .flags     = BLE_GATT_CHR_F_WRITE},
             {.uuid      = &s_uuid_evt.u,
@@ -670,6 +841,30 @@ static void worker_task(void *arg)
             }
         } break;
 
+        case IOTMER_BLE_Q_GATT_CLAIM: {
+            if (m.conn_handle != s_conn_handle) {
+                break;
+            }
+            arm_idle_timer();
+            char json_buf[513];
+            if (m.len == 0u || m.len >= sizeof(json_buf)) {
+                notify_claim_ack_json(s_conn_handle, false, IOTMER_BLE_WIFI_PROV_ERR_CLAIM_JSON);
+                (void)notify_frame(s_conn_handle, IOTMER_BLE_WIFI_PROV_EVT_ERROR,
+                                   IOTMER_BLE_WIFI_PROV_ERR_CLAIM_JSON, NULL, 0);
+                break;
+            }
+            memcpy(json_buf, m.data, m.len);
+            json_buf[m.len] = '\0';
+            int cr = handle_claim_set_json(json_buf);
+            if (cr == IOTMER_BLE_WIFI_PROV_ERR_NONE) {
+                notify_claim_ack_json(s_conn_handle, true, 0);
+            } else {
+                notify_claim_ack_json(s_conn_handle, false, cr);
+                (void)notify_frame(s_conn_handle, IOTMER_BLE_WIFI_PROV_EVT_ERROR, (uint16_t)cr, NULL,
+                                   0);
+            }
+        } break;
+
         default:
             break;
         }
@@ -727,7 +922,48 @@ esp_err_t iotmer_ble_wifi_prov_init(const iotmer_ble_wifi_prov_cfg_t *cfg)
         return ESP_ERR_NO_MEM;
     }
 
+    s_result_exit_sem = xSemaphoreCreateBinary();
+    if (!s_result_exit_sem) {
+        esp_timer_delete(s_timer_sess);
+        esp_timer_delete(s_timer_idle);
+        s_timer_sess = s_timer_idle = NULL;
+        vQueueDelete(s_q);
+        s_q = NULL;
+        vSemaphoreDelete(s_worker_exit_sem);
+        s_worker_exit_sem = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    s_result_q = xQueueCreate(IOTMER_BLE_RESULT_Q_DEPTH, sizeof(iotmer_ble_result_msg_t));
+    if (!s_result_q) {
+        vSemaphoreDelete(s_result_exit_sem);
+        s_result_exit_sem = NULL;
+        esp_timer_delete(s_timer_sess);
+        esp_timer_delete(s_timer_idle);
+        s_timer_sess = s_timer_idle = NULL;
+        vQueueDelete(s_q);
+        s_q = NULL;
+        vSemaphoreDelete(s_worker_exit_sem);
+        s_worker_exit_sem = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    if (xTaskCreate(result_cb_task, "iotmer_ble_rslt", IOTMER_BLE_RESULT_CB_STACK, NULL, 5,
+                     &s_result_task) != pdPASS) {
+        vQueueDelete(s_result_q);
+        s_result_q = NULL;
+        vSemaphoreDelete(s_result_exit_sem);
+        s_result_exit_sem = NULL;
+        esp_timer_delete(s_timer_sess);
+        esp_timer_delete(s_timer_idle);
+        s_timer_sess = s_timer_idle = NULL;
+        vQueueDelete(s_q);
+        s_q = NULL;
+        vSemaphoreDelete(s_worker_exit_sem);
+        s_worker_exit_sem = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
     if (xTaskCreate(worker_task, "iotmer_ble_prov", 4096, NULL, 5, &s_worker) != pdPASS) {
+        stop_result_task_and_delete();
         esp_timer_delete(s_timer_sess);
         esp_timer_delete(s_timer_idle);
         s_timer_sess = s_timer_idle = NULL;
@@ -795,6 +1031,7 @@ fail:
         vTaskDelete(s_worker);
         s_worker = NULL;
     }
+    stop_result_task_and_delete();
     if (s_timer_sess) {
         esp_timer_delete(s_timer_sess);
         s_timer_sess = NULL;
@@ -826,6 +1063,7 @@ void iotmer_ble_wifi_prov_deinit(void)
         (void)xQueueSend(s_q, &m, pdMS_TO_TICKS(500));
         (void)xSemaphoreTake(s_worker_exit_sem, pdMS_TO_TICKS(2000));
     }
+    stop_result_task_and_delete();
 
     if (s_host_task_started) {
         nimble_port_stop();
@@ -915,6 +1153,33 @@ esp_err_t iotmer_ble_wifi_prov_stop(void)
     reset_rx();
     emit_state(IOTMER_BLE_WIFI_PROV_STATE_IDLE);
     return ESP_OK;
+}
+
+bool iotmer_ble_wifi_prov_has_claim_code(void)
+{
+    return s_has_pending_claim;
+}
+
+esp_err_t iotmer_ble_wifi_prov_get_claim_code(char *out, size_t out_len)
+{
+    if (!out || out_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!s_has_pending_claim) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    size_t n = strnlen(s_pending_claim, sizeof(s_pending_claim));
+    if (n + 1u > out_len) {
+        return ESP_ERR_NO_MEM;
+    }
+    memcpy(out, s_pending_claim, n + 1u);
+    return ESP_OK;
+}
+
+void iotmer_ble_wifi_prov_clear_claim_code(void)
+{
+    memset(s_pending_claim, 0, sizeof(s_pending_claim));
+    s_has_pending_claim = false;
 }
 
 #endif /* CONFIG_IOTMER_BLE_WIFI_PROV */

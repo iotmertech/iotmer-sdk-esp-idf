@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <string.h>
 
 #include "esp_err.h"
@@ -19,6 +20,7 @@ _Static_assert(sizeof(NVS_KEY_FW_DONE_SHA256) <= 16, "NVS key fw_done_sha256");
 _Static_assert(sizeof("workspace_slug") <= 16, "NVS key workspace_slug");
 _Static_assert(sizeof("mqtt_username") <= 16, "NVS key mqtt_username");
 _Static_assert(sizeof("mqtt_password") <= 16, "NVS key mqtt_password");
+_Static_assert(sizeof("dht") <= 16, "NVS key dht");
 
 static const char *ns(void)
 {
@@ -77,8 +79,19 @@ esp_err_t iotmer_nvs_load_creds(iotmer_creds_t *out)
     out->mqtt_tls = tls ? true : false;
 
     (void)nvs_get_str_safe(h, "workspace_slug", out->workspace_slug, sizeof(out->workspace_slug));
+    (void)nvs_get_str_safe(h, "dht", out->device_http_token, sizeof(out->device_http_token));
 
     nvs_close(h);
+
+    /* NVS "dht" takes precedence; Kconfig IOTMER_DEVICE_HTTP_TOKEN is a dev fallback when empty. */
+    if (out->device_http_token[0] == '\0' && CONFIG_IOTMER_DEVICE_HTTP_TOKEN[0] != '\0') {
+        int w = snprintf(out->device_http_token, sizeof(out->device_http_token), "%s",
+                           CONFIG_IOTMER_DEVICE_HTTP_TOKEN);
+        if (w < 0 || (size_t)w >= sizeof(out->device_http_token)) {
+            ESP_LOGW(TAG, "IOTMER_DEVICE_HTTP_TOKEN (Kconfig) truncated to %zu chars",
+                     sizeof(out->device_http_token) - 1u);
+        }
+    }
 
     if (e1 != ESP_OK || e2 != ESP_OK || e3 != ESP_OK || e4 != ESP_OK || e5 != ESP_OK) {
         ESP_LOGW(TAG, "credentials missing in NVS");
@@ -138,6 +151,10 @@ esp_err_t iotmer_nvs_save_creds(const iotmer_creds_t *creds)
     if (err != ESP_OK) goto out;
     if (creds->workspace_slug[0] != '\0') {
         err = nvs_set_str(h, "workspace_slug", creds->workspace_slug);
+        if (err != ESP_OK) goto out;
+    }
+    if (creds->device_http_token[0] != '\0') {
+        err = nvs_set_str(h, "dht", creds->device_http_token);
         if (err != ESP_OK) goto out;
     }
 

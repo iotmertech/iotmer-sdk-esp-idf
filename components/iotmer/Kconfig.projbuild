@@ -35,6 +35,15 @@ config IOTMER_TEMPLATE_ID
     string "Template UUID (optional)"
     default ""
 
+config IOTMER_DEVICE_HTTP_TOKEN
+    string "Device HTTP token (optional NVS dht fallback)"
+    default ""
+    help
+        Opaque device_http_token (Bearer) for IOTMER device-auth HTTP, same as NVS key "dht".
+        If non-empty: used only when NVS has no dht (or it is empty) after iotmer_nvs_load_creds().
+        NVS dht always wins when present. The string is compiled into the firmware — lab/dev only;
+        production firmware should leave this empty and set dht via HTTPS provision or NVS.
+
 config IOTMER_WIFI_SSID
     string "WiFi SSID"
     default ""

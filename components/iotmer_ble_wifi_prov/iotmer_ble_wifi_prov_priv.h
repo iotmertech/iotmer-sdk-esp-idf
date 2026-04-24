@@ -12,6 +12,7 @@ typedef enum {
     IOTMER_BLE_Q_GAP = 0,
     IOTMER_BLE_Q_GATT_CTRL,
     IOTMER_BLE_Q_GATT_DATA,
+    IOTMER_BLE_Q_GATT_CLAIM,
     IOTMER_BLE_Q_TIMER_IDLE,
     IOTMER_BLE_Q_TIMER_SESS,
     IOTMER_BLE_Q_SHUTDOWN,
@@ -21,7 +22,7 @@ typedef struct {
     iotmer_ble_q_kind_t kind;
     uint16_t            conn_handle;
     uint16_t            len;
-    uint8_t             data[244];
+    uint8_t             data[512];
     int32_t             gap_status;
     uint8_t             gap_evt;
 } iotmer_ble_q_msg_t;

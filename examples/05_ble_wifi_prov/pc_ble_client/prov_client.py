@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 import uuid
 from typing import Optional, Union
@@ -21,14 +22,9 @@ from bleak.exc import BleakCharacteristicNotFoundError, BleakError
 # Must match components/iotmer_ble_wifi_prov/include/iotmer_ble_wifi_prov.h
 UUID_CTRL = "1d14d6ee-0101-4000-8024-b5a3c0ffee01"
 UUID_DATA = "1d14d6ee-0202-4000-8024-b5a3c0ffee01"
+UUID_CLAIM = "1d14d6ee-0404-4000-8024-b5a3c0ffee01"
 UUID_EVT = "1d14d6ee-0303-4000-8024-b5a3c0ffee01"
 UUID_SVC = "1d14d6ee-0001-4000-8024-b5a3c0ffee01"
-
-# Older firmware builds registered clock_seq octets as 24 80 (shows as …-2480-… on central).
-_UUID_CTRL_LEGACY = "1d14d6ee-0101-4000-2480-b5a3c0ffee01"
-_UUID_DATA_LEGACY = "1d14d6ee-0202-4000-2480-b5a3c0ffee01"
-_UUID_EVT_LEGACY = "1d14d6ee-0303-4000-2480-b5a3c0ffee01"
-_UUID_SVC_LEGACY = "1d14d6ee-0001-4000-2480-b5a3c0ffee01"
 
 OP_PING = 0x01
 OP_BEGIN_SSID = 0x02
@@ -73,38 +69,33 @@ def _dump_gatt(client: BleakClient) -> None:
 
 def _pick_iotmer_characteristics(
     client: BleakClient,
-) -> tuple[BleakGATTCharacteristic, BleakGATTCharacteristic, BleakGATTCharacteristic]:
-    """İstemcinin bildirdiği UUID sözdiziminden bağımsız olarak IOTMER ctrl/data/evt karakteristiklerini bul."""
+) -> tuple[
+    BleakGATTCharacteristic,
+    BleakGATTCharacteristic,
+    BleakGATTCharacteristic,
+    BleakGATTCharacteristic,
+]:
+    """Ctrl, Data, Claim, Events — kanonik UUID’ler (…-8024-…, iotmer_ble_wifi_prov.h ile aynı)."""
     by_canon: dict[str, BleakGATTCharacteristic] = {}
     for ch in client.services.characteristics.values():
         by_canon[_canonicalize_periph_uuid(ch.uuid)] = ch
 
-    evt_c = UUID_EVT.lower()
-    evt_l = _UUID_EVT_LEGACY.lower()
+    ctrl_s = UUID_CTRL.lower()
+    data_s = UUID_DATA.lower()
+    claim_s = UUID_CLAIM.lower()
+    evt_s = UUID_EVT.lower()
 
-    if evt_c in by_canon:
-        ctrl_s, data_s, evt_s = UUID_CTRL.lower(), UUID_DATA.lower(), evt_c
-    elif evt_l in by_canon:
-        print(
-            "[warn] Cihaz eski UUID ailesini (…-2480-…) kullanıyor; mümkünse firmware’i güncelle.",
-            file=sys.stderr,
-        )
-        ctrl_s, data_s, evt_s = (
-            _UUID_CTRL_LEGACY.lower(),
-            _UUID_DATA_LEGACY.lower(),
-            evt_l,
-        )
-    else:
+    if evt_s not in by_canon:
         raise BleakError(
-            "IOTMER EVT karakteristiği bulunamadı (kanonik 8024 veya eski 2480 ailesi). "
-            "`--dump-gatt` ile listelenen canonical satırlara bak."
+            "IOTMER Events karakteristiği bulunamadı (kanonik …-8024-… UUID). "
+            "`--dump-gatt` ile canonical satırlara bakın; macOS’ta oktet sırası farklı görünebilir."
         )
 
     try:
-        return by_canon[ctrl_s], by_canon[data_s], by_canon[evt_s]
+        return by_canon[ctrl_s], by_canon[data_s], by_canon[claim_s], by_canon[evt_s]
     except KeyError as ex:
         raise BleakError(
-            "IOTMER ctrl/data/evt karakteristikleri eksik (kanonik UUID eşlemesi başarısız)."
+            "IOTMER ctrl/data/claim/evt karakteristikleri eksik (UUID eşlemesi başarısız)."
         ) from ex
 
 
@@ -140,6 +131,21 @@ async def find_device(name_prefix: str, timeout: float) -> Optional[BLEDevice]:
     return await BleakScanner.find_device_by_filter(pred, timeout=timeout)
 
 
+async def _write_claim(
+    client: BleakClient, ch_claim: BleakGATTCharacteristic, claim_code: str
+) -> None:
+    body = json.dumps(
+        {"type": "claim.set", "claim_code": claim_code},
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    raw = body.encode("utf-8")
+    if len(raw) > 512:
+        raise ValueError(f"claim JSON too long: {len(raw)} B (max 512)")
+    print(f"[info] writing Claim JSON ({len(raw)} B)")
+    await client.write_gatt_char(ch_claim, raw, response=True)
+
+
 async def run_prov(
     target: Union[str, BLEDevice],
     ssid: str,
@@ -147,6 +153,8 @@ async def run_prov(
     ping_first: bool,
     result_timeout: float,
     *,
+    claim: Optional[str] = None,
+    claim_after_pass: bool = False,
     dump_gatt: bool = False,
 ) -> int:
     evt_q: asyncio.Queue[tuple[int, int, bytes]] = asyncio.Queue()
@@ -174,7 +182,7 @@ async def run_prov(
     # Tam servis keşfi: macOS’ta `services=[uuid…]` ile hedefli keşif sık sık **boş** ağaç döndürüyor.
     async with BleakClient(target) as client:
         try:
-            ch_ctrl, ch_data, ch_evt = _pick_iotmer_characteristics(client)
+            ch_ctrl, ch_data, ch_claim, ch_evt = _pick_iotmer_characteristics(client)
         except BleakError:
             if not dump_gatt:
                 _dump_gatt(client)
@@ -209,6 +217,13 @@ async def run_prov(
             except asyncio.TimeoutError:
                 print("[warn] no event after PING (continuing)", file=sys.stderr)
 
+        if claim and not claim_after_pass:
+            try:
+                await _write_claim(client, ch_claim, claim)
+            except ValueError as ex:
+                print(f"[fail] {ex}", file=sys.stderr)
+                return 1
+
         ssid_b = ssid.encode("utf-8")
         pass_b = password.encode("utf-8")
 
@@ -219,6 +234,13 @@ async def run_prov(
         await client.write_gatt_char(ch_ctrl, bytes([OP_BEGIN_PASS]), response=True)
         for i in range(0, len(pass_b), chunk):
             await client.write_gatt_char(ch_data, pass_b[i : i + chunk], response=True)
+
+        if claim and claim_after_pass:
+            try:
+                await _write_claim(client, ch_claim, claim)
+            except ValueError as ex:
+                print(f"[fail] {ex}", file=sys.stderr)
+                return 1
 
         await client.write_gatt_char(ch_ctrl, bytes([OP_COMMIT]), response=True)
 
@@ -237,10 +259,10 @@ async def scan_only(name_prefix: str, timeout: float) -> int:
     seen: dict[str, str] = {}
 
     def _adv_has_iotmer(uuids: list[str]) -> bool:
-        want = {UUID_SVC.lower(), _UUID_SVC_LEGACY.lower()}
+        want = UUID_SVC.lower()
         for u in uuids:
             try:
-                if _canonicalize_periph_uuid(u) in want:
+                if _canonicalize_periph_uuid(u) == want:
                     return True
             except ValueError:
                 continue
@@ -253,7 +275,6 @@ async def scan_only(name_prefix: str, timeout: float) -> int:
         hit = (
             name.startswith(name_prefix)
             or UUID_SVC.lower() in uuids_l
-            or _UUID_SVC_LEGACY.lower() in uuids_l
             or _adv_has_iotmer(uuids)
         )
         if hit and d.address not in seen:
@@ -281,6 +302,16 @@ def main() -> None:
     p.add_argument("--ping", action="store_true", help="Send PING before credential transfer.")
     p.add_argument("--result-timeout", type=float, default=30.0, help="Seconds to wait for DONE/ERROR after COMMIT.")
     p.add_argument(
+        "--claim",
+        default="",
+        help='Optional one-time claim_code (e.g. pc_...). Sent as JSON to Claim GATT (…0404…). Do this *before* COMMIT (firmware may stop BLE after success).',
+    )
+    p.add_argument(
+        "--claim-after-pass",
+        action="store_true",
+        help="Send --claim after password fragments, immediately before COMMIT (instead of at start).",
+    )
+    p.add_argument(
         "--dump-gatt",
         action="store_true",
         help="Bağlantıdan sonra keşfedilen GATT servis/karakteristik UUID’lerini stderr’e yaz.",
@@ -294,6 +325,8 @@ def main() -> None:
     if not args.ssid or not args.password:
         p.error("--ssid and --password are required unless --scan-only.")
 
+    claim: Optional[str] = args.claim.strip() or None
+
     async def _go() -> tuple[str, int]:
         if args.address:
             return args.address, await run_prov(
@@ -302,6 +335,8 @@ def main() -> None:
                 args.password,
                 args.ping,
                 args.result_timeout,
+                claim=claim,
+                claim_after_pass=bool(args.claim_after_pass),
                 dump_gatt=args.dump_gatt,
             )
         dev = await find_device(args.name_prefix, args.scan_timeout)
@@ -318,6 +353,8 @@ def main() -> None:
             args.password,
             args.ping,
             args.result_timeout,
+            claim=claim,
+            claim_after_pass=bool(args.claim_after_pass),
             dump_gatt=args.dump_gatt,
         )
 
