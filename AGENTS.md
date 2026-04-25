@@ -8,7 +8,7 @@ This file helps **AI coding agents** (Cursor, Copilot, and similar) and humans w
 - **High-level flow**: Wi‑Fi, HTTPS device provisioning, credentials in NVS, MQTT (TLS), optional HTTPS OTA, optional **BLE JSON channel** (NimBLE, `iotmer_ble`).
 - **Public application API**: `components/iotmer/include/iotmer_client.h` (headers applications should include).
 - **Optional BLE JSON API**: `components/iotmer_ble/include/iotmer_ble.h` (separate component; not included unless the app adds it).
-- **MQTT Config Protocol v1** (device side): `components/iotmer/include/iotmer_config.h` and `iotmer_config.c`.
+- **MQTT Config Protocol** (device side): `components/iotmer/include/iotmer_config.h` and `iotmer_config.c`.
 
 For authoritative behaviour details, use **[docs.iotmer.com](https://docs.iotmer.com/)** together with the `docs/sdk/esp-idf/` scaffold in this repo.
 

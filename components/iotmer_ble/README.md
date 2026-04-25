@@ -18,6 +18,6 @@
 
 ## Notes
 
-- Advertising places **service UUID** in the advertising PDU and the **GAP name** in scan response to avoid legacy 31‑octet limits.
+- Advertising places **service UUID** in the advertising PDU and the **GAP name** in scan response to stay within common **31‑byte** advertising payload limits.
 - If `CONFIG_IOTMER_BLE_REQUIRE_ENC=y`, centrals must pair/encrypt before writing to RX.
 

@@ -61,7 +61,7 @@ typedef struct {
 typedef void (*iotmer_config_event_cb_t)(void *user_ctx, const iotmer_config_event_t *ev);
 
 /**
- * MQTT Config Protocol v1 — reassembly / crypto workspace.
+ * MQTT Config Protocol — reassembly / crypto workspace.
  *
  * Buffer layout (single user-supplied region):
  * - Lower half [0 .. cap/2): decoded `data_b64` payload bytes (gzip stream or raw JSON for identity).

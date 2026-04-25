@@ -1,6 +1,6 @@
-# 04_config — MQTT Config Protocol v1 (reference)
+# 04_config — MQTT Config Protocol (reference)
 
-This example demonstrates the **MQTT Config Protocol v1** implemented by the `iotmer` component.
+This example demonstrates the **MQTT Config Protocol** implemented by the `iotmer` component.
 
 Flow:
 

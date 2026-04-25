@@ -48,19 +48,6 @@ def _uuid_matches(candidate: str, target: str) -> bool:
     return not t_variants.isdisjoint(c_variants)
 
 
-def _pick_device(devices, name_prefix: str | None):
-    if not devices:
-        return None
-    if name_prefix:
-        for d in devices:
-            name = getattr(d, "name", None)
-            if name is None:
-                # Some backends return non-BLEDevice wrapper objects.
-                name = str(d)
-            if (name or "").startswith(name_prefix):
-                return d
-    return devices[0]
-
 async def scan_with_adv(timeout: float = 5.0):
     """
     Robust macOS-friendly scan:

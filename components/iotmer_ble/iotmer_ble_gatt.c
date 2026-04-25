@@ -15,6 +15,10 @@
 #include "host/ble_uuid.h"
 #include "os/os_mbuf.h"
 
+/* Some NimBLE APIs are used without public prototypes in ESP-IDF headers. */
+void ble_hs_lock(void);
+void ble_hs_unlock(void);
+
 #ifndef CONFIG_IOTMER_BLE_MAX_RX_LEN
 #define CONFIG_IOTMER_BLE_MAX_RX_LEN 512
 #endif
@@ -55,8 +59,11 @@ static int tx_access_cb(uint16_t conn_handle, uint16_t attr_handle,
         return BLE_ATT_ERR_UNLIKELY;
     }
 
-    return os_mbuf_append(ctxt->om, s_gatt.last_tx, s_gatt.last_tx_len) == 0 ? 0
-                                                                             : BLE_ATT_ERR_INSUFFICIENT_RES;
+    ble_hs_lock();
+    const uint16_t n = s_gatt.last_tx_len;
+    const int rc = os_mbuf_append(ctxt->om, s_gatt.last_tx, n);
+    ble_hs_unlock();
+    return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
 }
 
 static int rx_access_cb(uint16_t conn_handle, uint16_t attr_handle,
@@ -140,12 +147,14 @@ esp_err_t iotmer_ble_gatt_set_tx_value(const uint8_t *data, uint16_t len)
         return ESP_ERR_INVALID_ARG;
     }
 
+    ble_hs_lock();
     memcpy(s_gatt.last_tx, data, len);
     s_gatt.last_tx_len = len;
 
     if (s_gatt.tx_val_handle != 0) {
         ble_gatts_chr_updated(s_gatt.tx_val_handle);
     }
+    ble_hs_unlock();
 
     return ESP_OK;
 }

@@ -26,8 +26,10 @@ int iotmer_ble_gatt_init(void (*on_rx_json)(void *user_ctx, const uint8_t *data,
 esp_err_t iotmer_ble_gatt_set_tx_value(const uint8_t *data, uint16_t len);
 uint16_t iotmer_ble_gatt_get_tx_handle(void);
 
-/* In NimBLE, ble_store_config_init is implemented but not prototyped in the public header. */
-int ble_store_config_init(void);
+/* Some NimBLE APIs are used without public prototypes in ESP-IDF headers. */
+void ble_hs_lock(void);
+void ble_hs_unlock(void);
+void ble_store_config_init(void);
 
 static const char *TAG = "iotmer_ble";
 
@@ -158,7 +160,7 @@ static void ble_start_advertising(void)
         return;
     }
 
-    // Put GAP device name in scan response (legacy adv size constraints).
+    // Put GAP device name in scan response (advertising payload size constraints).
     struct ble_hs_adv_fields sr = {0};
     const char *name = ble_svc_gap_device_name();
     sr.name = (const uint8_t *)name;
@@ -199,17 +201,7 @@ esp_err_t iotmer_ble_init(const iotmer_ble_cfg_t *cfg)
 
     s_cfg = cfg != NULL ? *cfg : IOTMER_BLE_CFG_DEFAULT();
 
-    // Ensure NVS is ready (NimBLE uses it for storage by default).
-    esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        err = nvs_flash_init();
-    }
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    err = nimble_port_init();
+    esp_err_t err = nimble_port_init();
     if (err != ESP_OK) {
         return err;
     }
@@ -268,6 +260,7 @@ esp_err_t iotmer_ble_stop(void)
 
     s_started = false;
 
+    ble_hs_lock();
     if (ble_gap_adv_active()) {
         (void)ble_gap_adv_stop();
     }
@@ -275,6 +268,7 @@ esp_err_t iotmer_ble_stop(void)
     if (s_connected) {
         (void)ble_gap_terminate(s_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
     }
+    ble_hs_unlock();
 
     s_connected = false;
     s_conn_handle = 0;
@@ -308,9 +302,6 @@ esp_err_t iotmer_ble_send_json(const uint8_t *data, size_t len)
     if (!s_inited) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (!s_connected) {
-        return ESP_ERR_INVALID_STATE;
-    }
     if (data == NULL || len == 0) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -333,7 +324,11 @@ esp_err_t iotmer_ble_send_json(const uint8_t *data, size_t len)
         return ESP_ERR_NO_MEM;
     }
 
-    const int rc = ble_gatts_notify_custom(s_conn_handle, tx_handle, om);
+    ble_hs_lock();
+    const bool connected = s_connected;
+    const uint16_t conn_handle = s_conn_handle;
+    const int rc = connected ? ble_gatts_notify_custom(conn_handle, tx_handle, om) : BLE_HS_ENOTCONN;
+    ble_hs_unlock();
     if (rc != 0) {
         return ESP_FAIL;
     }

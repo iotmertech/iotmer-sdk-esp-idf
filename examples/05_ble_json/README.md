@@ -27,7 +27,7 @@ The app responds via the TX characteristic notifications.
 
 ## Protocol documentation
 
-See `docs/sdk/esp-idf/ble-json-provisioning.md` for the reference JSON contract carried over `iotmer_ble`.
+See the published docs for the reference JSON contract carried over `iotmer_ble`: `https://docs.iotmer.com/docs/sdk/esp-idf/ble-json-provisioning`.
 
 ## PC test client (optional)
 

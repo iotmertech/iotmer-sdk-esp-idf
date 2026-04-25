@@ -48,7 +48,8 @@ typedef struct iotmer_ble_cfg {
 
 /**
  * Initialise NimBLE host, GAP/GATT services, and the IOTMER BLE service.
- * Call once after `nvs_flash_init()`. Repeated init returns ESP_OK.
+ * Call once after your application initialises NVS (`nvs_flash_init()`).
+ * Repeated init returns ESP_OK.
  */
 esp_err_t iotmer_ble_init(const iotmer_ble_cfg_t *cfg);
 
