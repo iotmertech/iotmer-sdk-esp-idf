@@ -11,8 +11,9 @@ on:
       - ".github/workflows/upload-components.yml"
 
 jobs:
-  validate_upload_dry_run:
-    name: Validate upload (dry-run)
+  # Ayrı job: biri 403/izin hatası verse diğeri yeşil kalır; registry'de her bileşen ayrı kayıt/izin ister.
+  validate_iotmer:
+    name: Validate iotmer (dry-run)
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -22,18 +23,37 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Validate component packaging (no publish)
+      - name: Validate iotmer (no publish)
         uses: espressif/upload-components-ci-action@v2
         with:
           namespace: "iotmertech"
           components: |
             iotmer: components/iotmer
+          api_token: ${{ secrets.IDF_COMPONENT_API_TOKEN }}
+          dry_run: true
+
+  validate_iotmer_ble:
+    name: Validate iotmer_ble (dry-run)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Validate iotmer_ble (no publish)
+        uses: espressif/upload-components-ci-action@v2
+        with:
+          namespace: "iotmertech"
+          components: |
             iotmer_ble: components/iotmer_ble
           api_token: ${{ secrets.IDF_COMPONENT_API_TOKEN }}
           dry_run: true
 
-  upload_components:
-    name: Upload components (publish)
+  upload_iotmer:
+    name: Publish iotmer
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -44,12 +64,32 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Upload components to ESP Component Registry
+      - name: Upload iotmer to ESP Component Registry
         uses: espressif/upload-components-ci-action@v2
         with:
           namespace: "iotmertech"
           components: |
             iotmer: components/iotmer
+          api_token: ${{ secrets.IDF_COMPONENT_API_TOKEN }}
+          version: ${{ github.ref_name }}
+
+  upload_iotmer_ble:
+    name: Publish iotmer_ble
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Upload iotmer_ble to ESP Component Registry
+        uses: espressif/upload-components-ci-action@v2
+        with:
+          namespace: "iotmertech"
+          components: |
             iotmer_ble: components/iotmer_ble
           api_token: ${{ secrets.IDF_COMPONENT_API_TOKEN }}
           version: ${{ github.ref_name }}
