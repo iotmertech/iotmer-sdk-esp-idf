@@ -1,4 +1,4 @@
 {
-  ".": "0.1.12"
+  "components/iotmer": "0.1.12",
+  "components/iotmer_ble": "0.1.0"
 }
-

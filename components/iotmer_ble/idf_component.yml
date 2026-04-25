@@ -15,6 +15,13 @@ targets:
   - "esp32s3"
   - "esp32c3"
   - "esp32c6"
+files:
+  include:
+    - "CMakeLists.txt"
+    - "Kconfig.projbuild"
+    - "README.md"
+    - "*.c"
+    - "include/**"
 dependencies:
   idf: ">=5.0.0"
 
