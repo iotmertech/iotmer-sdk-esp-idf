@@ -1,5 +1,5 @@
 /*
- * iotmer_config.c — MQTT Config Protocol v1 (device side).
+ * iotmer_config.c — MQTT Config Protocol (device side).
  */
 
 #include <ctype.h>
@@ -732,7 +732,7 @@ static esp_err_t handle_resp(iotmer_config_ctx_t *ctx, const char *payload, int 
     }
 
     emit_fail(cb, user_ctx, ctx->pending_rid,
-              "resp: missing chunk_index (v1 requires chunked data_b64)");
+              "resp: missing chunk_index (chunked data_b64 required)");
     transfer_reset(ctx);
     cJSON_Delete(root);
     return ESP_FAIL;

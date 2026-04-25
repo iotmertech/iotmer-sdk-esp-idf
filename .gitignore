@@ -1,13 +1,12 @@
 # ESP-IDF build outputs
-**/build/
 build/
+**/build/
 
 # Component Manager (recreated by `idf.py build`)
 **/managed_components/
 
-# Local sdkconfig (use sdkconfig.defaults; regenerate with idf.py set-target / build)
-examples/*/sdkconfig
-components/iotmer/examples/*/sdkconfig
+# Local sdkconfig (per-example project roots; use sdkconfig.defaults; regenerate with set-target / build)
+**/examples/**/sdkconfig
 
 # Backups
 **/sdkconfig.old
@@ -20,10 +19,33 @@ components/iotmer/examples/*/sdkconfig
 
 # Python
 __pycache__/
+**/__pycache__/
 *.py[cod]
 .Python
 venv/
 .venv/
+*.egg-info/
+.eggs/
+
+# Python / test / type-checker caches
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.tox/
+.nox/
+.hypothesis/
+htmlcov/
+.coverage
+.coverage.*
+*.cover
+pip-wheel-metadata/
+
+# Generic tool caches (esp. Language Server / IDEs)
+.cache/
+**/.cache/
+
+# Node (if you add a docs/site toolchain locally)
+node_modules/
 
 # OS / IDE
 .DS_Store
@@ -36,7 +58,7 @@ Thumbs.db
 # Logs & debug
 *.log
 
-.cache/
+# Local docs scaffold (not pushed to GitHub; see docs.iotmer.com / internal copies)
 docs/
 
 .envrc

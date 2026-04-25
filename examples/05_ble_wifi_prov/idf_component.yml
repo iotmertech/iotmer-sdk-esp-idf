@@ -1,6 +1,0 @@
-dependencies:
-  idf: ">=5.0.0"
-  iotmer:
-    path: ../../components/iotmer
-  iotmer_ble_wifi_prov:
-    path: ../../components/iotmer_ble_wifi_prov

@@ -1,0 +1,3 @@
+dependencies:
+  iotmertech/iotmer: "*"
+  iotmertech/iotmer_ble: "*"

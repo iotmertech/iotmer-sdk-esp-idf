@@ -109,7 +109,7 @@ esp_err_t iotmer_subscribe_commands(iotmer_client_t *client,
 esp_err_t iotmer_subscribe_config(iotmer_client_t *client,
                                  iotmer_message_cb_t cb, void *ctx);
 
-/** MQTT Config Protocol v1 (meta / get / resp / status): see `iotmer_config.h`. */
+/** MQTT Config Protocol (meta / get / resp / status): see `iotmer_config.h`. */
 
 /**
  * Load persisted IOTMER credentials from NVS (namespace from Kconfig `IOTMER_NVS_NAMESPACE`).

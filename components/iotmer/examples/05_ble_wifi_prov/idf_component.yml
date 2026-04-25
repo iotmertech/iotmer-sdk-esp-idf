@@ -1,4 +1,0 @@
-dependencies:
-  iotmertech/iotmer:
-    path: "../../"
-  iotmertech/iotmer_ble_wifi_prov: "^0.1.2"

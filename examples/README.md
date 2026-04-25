@@ -7,8 +7,8 @@ Reference applications for this repository’s `iotmer` component. **More exampl
 | [`01_provisioning`](01_provisioning/) | Factory bring-up: HTTPS provision, NVS save, optional OTA. No MQTT client. |
 | [`02_telemetry`](02_telemetry/) | Field-style app: MQTT connect, subscribe, telemetry loop. |
 | [`03_lwt_presence`](03_lwt_presence/) | Retained presence + MQTT last-will ONLINE/OFFLINE. |
-| [`04_config`](04_config/) | MQTT Config Protocol v1: `config/meta` → `config/get` → `config/resp` (chunked `data_b64`, gzip or identity) → `config/status`. |
-| [`05_ble_wifi_prov`](05_ble_wifi_prov/) | NimBLE + IOTMER GATT v1: Wi‑Fi over BLE → `iotmer_wifi_set_credentials`, optional **Claim** (`…0404…`), then **`iotmer_provision`** + **`bind-claim`** in `on_result` (dedicated task). Defaults include **full CA bundle** for HTTPS to console. |
+| [`04_config`](04_config/) | MQTT Config Protocol: `config/meta` → `config/get` → `config/resp` (chunked `data_b64`, gzip or identity) → `config/status`. |
+| [`05_ble_json`](05_ble_json/) | NimBLE + `iotmer_ble`: general BLE JSON channel (demo includes `wifi.set` / `wifi.clear`). |
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ Reference applications for this repository’s `iotmer` component. **More exampl
 `build/`, `managed_components/`, and per-example `sdkconfig` are not committed (see repo `.gitignore`). After clone:
 
 ```bash
-cd examples/01_provisioning   # or 02_telemetry / 04_config / 05_ble_wifi_prov / …
+cd examples/01_provisioning   # or 02_telemetry / 04_config / 05_ble_json / …
 idf.py set-target esp32c3     # or esp32, esp32s3, …
 idf.py build
 ```
@@ -36,7 +36,7 @@ Component Manager restores dependencies from each example’s `dependencies.lock
 Kconfig sources:
 
 - Core SDK: **`components/iotmer/Kconfig.projbuild`**
-- Optional BLE Wi‑Fi provisioning: **`components/iotmer_ble_wifi_prov/Kconfig.projbuild`** (only when that component directory is on `EXTRA_COMPONENT_DIRS`)
+- Optional BLE JSON channel: **`components/iotmer_ble/Kconfig.projbuild`** (only when that component directory is on `EXTRA_COMPONENT_DIRS`)
 
 ## Flash & monitor
 
@@ -63,27 +63,26 @@ MQTT topics follow the **console** ACL pattern `{workspace_slug}/{device_key}/�
 | `esp-x509-crt-bundle: No matching trusted root` | Enable cross-signed bundle verify (`CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y`) as in defaults. |
 | Task watchdog during TLS | Increase `CONFIG_ESP_TASK_WDT_TIMEOUT_S` and/or main stack (`CONFIG_ESP_MAIN_TASK_STACK_SIZE`) per example defaults. |
 | MQTT `not authorized` | NVS MQTT password out of date vs console; re-run provision with auth code or rotate credentials and provision again. |
-| `bind-claim: device_http_token missing` (serial) | Run HTTPS `iotmer_provision()` so the response fills NVS `dht`, or set **`IOTMER_DEVICE_HTTP_TOKEN`** in menuconfig for lab only (NVS `dht` still wins if set). |
-| BLE build: missing `host/ble_gap.h` / `bt` not in requirements | Use current `iotmer_ble_wifi_prov` **CMakeLists.txt** (declares **`bt`**); run **`idf.py fullclean`** after Kconfig / component path changes. |
-| BLE PC client (macOS): characteristic UUID “not found” | OS may display UUID strings in a non-RFC order; use **`examples/05_ble_wifi_prov/pc_ble_client`** or compare 128-bit values. Remove the peripheral from macOS Bluetooth settings after firmware UUID changes. |
+| BLE build: missing `host/ble_gap.h` / `bt` not in requirements | Ensure your app `CMakeLists.txt` declares `REQUIRES bt` via `iotmer_ble` and run **`idf.py fullclean`** after Kconfig / component path changes. |
+| BLE client (macOS): characteristic UUID “not found” | OS may display UUID strings in a non-RFC order; compare 128-bit values. Remove the peripheral from macOS Bluetooth settings after firmware UUID changes. |
 
 ## SDK layout (reference)
 
 ```
 components/iotmer/
 ├── include/iotmer_client.h   ← public API
-├── include/iotmer_config.h   ← config protocol v1 API
+├── include/iotmer_config.h   ← config protocol API
 ├── iotmer_client.c           ← init / connect / MQTT
 ├── iotmer_provision.c        ← HTTPS provision
 ├── iotmer_nvs.c              ← credentials NVS
 ├── iotmer_ota.c              ← HTTPS OTA (Kconfig)
 ├── iotmer_telemetry.c        ← publish helpers
-├── iotmer_config.c           ← MQTT Config Protocol v1 (device)
+├── iotmer_config.c           ← MQTT Config Protocol (device)
 ├── iotmer_topics.c           ← topic strings
 └── iotmer_wifi.c             ← STA connect
 
-components/iotmer_ble_wifi_prov/
-└── include/iotmer_ble_wifi_prov.h   ← optional BLE Wi-Fi provisioning (GATT v1)
+components/iotmer_ble/
+└── include/iotmer_ble.h   ← optional BLE JSON channel (transport)
 ```
 
 `iotmer_internal.h` is for component sources only, not for application include paths.

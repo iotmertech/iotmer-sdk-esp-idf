@@ -1,6 +1,6 @@
 # iotmer-sdk-esp-idf
 
-Official ESP-IDF component to connect Espressif chips to **[IOTMER](https://iotmer.com)** — Wi‑Fi, HTTPS device provisioning, NVS credentials, MQTT (TLS), optional HTTPS OTA, optional **BLE Wi‑Fi credential provisioning** (NimBLE, [`iotmer_ble_wifi_prov`](components/iotmer_ble_wifi_prov/README.md)). Public API: [`components/iotmer/include/iotmer_client.h`](components/iotmer/include/iotmer_client.h).
+Official ESP-IDF component to connect Espressif chips to **[IOTMER](https://iotmer.com)** — Wi‑Fi, HTTPS device provisioning, NVS credentials, MQTT (TLS), optional HTTPS OTA, optional **BLE JSON channel** (NimBLE, `iotmer_ble`). Public API: [`components/iotmer/include/iotmer_client.h`](components/iotmer/include/iotmer_client.h).
 
 - **Documentation** (console, workspaces, devices, MQTT, REST API): [https://docs.iotmer.com/](https://docs.iotmer.com/)
 - **ESP-IDF SDK guide** (introduction): [https://docs.iotmer.com/docs/sdk/esp-idf/intro](https://docs.iotmer.com/docs/sdk/esp-idf/intro)
@@ -54,8 +54,8 @@ set(EXTRA_COMPONENT_DIRS components/iotmer-sdk-esp-idf/components)
 
 ## Examples & local docs
 
-- **[examples/README.md](examples/README.md)** — build, flash, `menuconfig`, troubleshooting; reference apps under `examples/` (includes **`05_ble_wifi_prov`** for BLE → Wi‑Fi credential transfer).
-- **`docs/`** — English Markdown scaffold for copying into a [Docusaurus](https://docusaurus.io/) site (see [docs/README.md](docs/README.md)); BLE protocol: [docs/sdk/esp-idf/ble-wifi-provisioning.md](docs/sdk/esp-idf/ble-wifi-provisioning.md).
+- **[examples/README.md](examples/README.md)** — build, flash, `menuconfig`, troubleshooting; reference apps under `examples/` (includes **`05_ble_json`** for BLE JSON provisioning demo).
+- **`docs/`** — English Markdown scaffold for copying into a [Docusaurus](https://docusaurus.io/) site (see [docs/README.md](docs/README.md)); BLE JSON provisioning: [`docs/sdk/esp-idf/ble-json-provisioning.md`](docs/sdk/esp-idf/ble-json-provisioning.md).
 - **[CHANGELOG.md](CHANGELOG.md)** — release-oriented summary of notable changes.
 - **[AGENTS.md](AGENTS.md)** — Guide for humans and **AI coding agents** (repo map, change principles, docs alignment).
 
