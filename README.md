@@ -54,7 +54,7 @@ set(EXTRA_COMPONENT_DIRS components/iotmer-sdk-esp-idf/components)
 
 ## Examples & local docs
 
-- **[examples/README.md](examples/README.md)** — build, flash, `menuconfig`, troubleshooting; reference apps under `examples/` (includes **`06_ble_json`** for BLE JSON provisioning demo).
+- **[examples/README.md](examples/README.md)** — build, flash, `menuconfig`, troubleshooting; reference apps under `examples/` (includes **`05_ble_json`** for BLE JSON provisioning demo).
 - **`docs/`** — English Markdown scaffold for copying into a [Docusaurus](https://docusaurus.io/) site (see [docs/README.md](docs/README.md)); BLE JSON provisioning: [`docs/sdk/esp-idf/ble-json-provisioning.md`](docs/sdk/esp-idf/ble-json-provisioning.md).
 - **[CHANGELOG.md](CHANGELOG.md)** — release-oriented summary of notable changes.
 - **[AGENTS.md](AGENTS.md)** — Guide for humans and **AI coding agents** (repo map, change principles, docs alignment).

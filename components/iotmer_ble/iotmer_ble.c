@@ -26,6 +26,9 @@ int iotmer_ble_gatt_init(void (*on_rx_json)(void *user_ctx, const uint8_t *data,
 esp_err_t iotmer_ble_gatt_set_tx_value(const uint8_t *data, uint16_t len);
 uint16_t iotmer_ble_gatt_get_tx_handle(void);
 
+/* In NimBLE, ble_store_config_init is implemented but not prototyped in the public header. */
+int ble_store_config_init(void);
+
 static const char *TAG = "iotmer_ble";
 
 static bool s_inited;
@@ -51,7 +54,7 @@ static void build_gap_name(char *out, size_t out_len)
 
     const char *prefix = CONFIG_IOTMER_BLE_GAP_NAME_PREFIX;
     if (prefix == NULL) {
-        prefix = "IOTMER-";
+        prefix = "MER-";
     }
 
     const uint16_t suffix = ((uint16_t)mac[4] << 8) | mac[5];
@@ -142,11 +145,10 @@ static void ble_start_advertising(void)
     adv.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
 
     // Advertise the IOTMER BLE JSON service UUID in the advertising PDU.
-    static const uint8_t svc_uuid[16] = {
+    static const ble_uuid128_t svc_uuid = BLE_UUID128_INIT(
         0xee, 0xd6, 0x14, 0x1d, 0x01, 0x10, 0x00, 0x40,
-        0x80, 0x24, 0xb5, 0xa3, 0xc0, 0xff, 0xee, 0x01,
-    };
-    adv.uuids128 = svc_uuid;
+        0x80, 0x24, 0xb5, 0xa3, 0xc0, 0xff, 0xee, 0x01);
+    adv.uuids128 = &svc_uuid;
     adv.num_uuids128 = 1;
     adv.uuids128_is_complete = 1;
 

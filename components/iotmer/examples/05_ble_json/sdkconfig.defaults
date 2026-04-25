@@ -1,0 +1,20 @@
+#
+# Example defaults for BLE JSON provisioning over iotmer_ble (ESP-IDF v5+ / v6).
+#
+
+# Enable IOTMER BLE component
+CONFIG_IOTMER_BLE=y
+
+# GAP advertised name prefix (append short MAC-derived hex suffix)
+CONFIG_IOTMER_BLE_GAP_NAME_PREFIX="MER-"
+
+# Enable Bluetooth + NimBLE (adjust in menuconfig if your target differs)
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_CONTROLLER_ENABLED=y
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_GATT_SERVER=y
+
+# Optional: avoid flash size warning on common 4MB modules
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+

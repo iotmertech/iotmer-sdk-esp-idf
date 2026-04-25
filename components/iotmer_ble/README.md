@@ -3,7 +3,7 @@
 `iotmer_ble` adds a small **BLE GATT JSON channel** built on **ESP-IDF NimBLE**.
 
 - **Purpose**: A general transport for UTF-8 JSON messages between a phone/PC and the device.
-- **Relation to provisioning**: Wi‑Fi provisioning is implemented *on top* of this channel via the JSON contract in `docs/sdk/esp-idf/ble-json-provisioning.md` (see `examples/06_ble_json`).
+- **Relation to provisioning**: Wi‑Fi provisioning is implemented *on top* of this channel via the JSON contract in `docs/sdk/esp-idf/ble-json-provisioning.md` (see `examples/05_ble_json`).
 
 ## Public API
 

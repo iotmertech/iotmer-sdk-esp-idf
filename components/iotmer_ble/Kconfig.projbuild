@@ -11,7 +11,7 @@ config IOTMER_BLE
 
 config IOTMER_BLE_GAP_NAME_PREFIX
     string "GAP device name prefix"
-    default "IOTMER-"
+    default "MER-"
     depends on IOTMER_BLE
     help
         Advertised name prefix. The implementation appends a short MAC-derived hex suffix.

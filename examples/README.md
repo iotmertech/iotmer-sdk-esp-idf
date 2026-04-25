@@ -8,7 +8,7 @@ Reference applications for this repository’s `iotmer` component. **More exampl
 | [`02_telemetry`](02_telemetry/) | Field-style app: MQTT connect, subscribe, telemetry loop. |
 | [`03_lwt_presence`](03_lwt_presence/) | Retained presence + MQTT last-will ONLINE/OFFLINE. |
 | [`04_config`](04_config/) | MQTT Config Protocol v1: `config/meta` → `config/get` → `config/resp` (chunked `data_b64`, gzip or identity) → `config/status`. |
-| [`06_ble_json`](06_ble_json/) | NimBLE + `iotmer_ble`: general BLE JSON channel (demo includes `wifi.set` / `wifi.clear`). |
+| [`05_ble_json`](05_ble_json/) | NimBLE + `iotmer_ble`: general BLE JSON channel (demo includes `wifi.set` / `wifi.clear`). |
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ Reference applications for this repository’s `iotmer` component. **More exampl
 `build/`, `managed_components/`, and per-example `sdkconfig` are not committed (see repo `.gitignore`). After clone:
 
 ```bash
-cd examples/01_provisioning   # or 02_telemetry / 04_config / 06_ble_json / …
+cd examples/01_provisioning   # or 02_telemetry / 04_config / 05_ble_json / …
 idf.py set-target esp32c3     # or esp32, esp32s3, …
 idf.py build
 ```

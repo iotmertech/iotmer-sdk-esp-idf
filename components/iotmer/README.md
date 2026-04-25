@@ -80,7 +80,7 @@ Bundled ESP-IDF examples (also indexed by the ESP Component Registry **Examples*
 - `examples/02_telemetry`
 - `examples/03_lwt_presence`
 - `examples/04_config`
-- `examples/06_ble_json` — optional **BLE** JSON channel + provisioning demo ([`iotmer_ble`](../iotmer_ble/README.md), contract: [`docs/sdk/esp-idf/ble-json-provisioning.md`](../docs/sdk/esp-idf/ble-json-provisioning.md))
+- `examples/05_ble_json` — optional **BLE** JSON channel + provisioning demo ([`iotmer_ble`](../iotmer_ble/README.md), contract: [`docs/sdk/esp-idf/ble-json-provisioning.md`](../docs/sdk/esp-idf/ble-json-provisioning.md))
 
 Canonical copies in the main repository:
 
@@ -89,5 +89,5 @@ Canonical copies in the main repository:
 - Telemetry: `https://github.com/iotmertech/iotmer-sdk-esp-idf/tree/main/examples/02_telemetry`
 - LWT / presence: `https://github.com/iotmertech/iotmer-sdk-esp-idf/tree/main/examples/03_lwt_presence`
 - Config: `https://github.com/iotmertech/iotmer-sdk-esp-idf/tree/main/examples/04_config`
-- BLE JSON provisioning: `https://github.com/iotmertech/iotmer-sdk-esp-idf/tree/main/examples/06_ble_json`
+- BLE JSON provisioning: `https://github.com/iotmertech/iotmer-sdk-esp-idf/tree/main/examples/05_ble_json`
 

@@ -11,7 +11,7 @@ for published **components** (`components/iotmer/idf_component.yml` versions).
 ### Added
 
 - Optional component **`iotmer_ble`**: NimBLE GATT JSON channel used as the base transport for BLE provisioning and device commands.
-- Example **`examples/06_ble_json`**: reference JSON command contract over BLE (includes `wifi.set` / `wifi.clear` demo).
+- Example **`examples/05_ble_json`**: reference JSON command contract over BLE (includes `wifi.set` / `wifi.clear` demo).
 - English SDK docs **`docs/sdk/esp-idf/ble-json-channel.md`** and **`docs/sdk/esp-idf/ble-json-provisioning.md`**.
 
 ### Fixed
