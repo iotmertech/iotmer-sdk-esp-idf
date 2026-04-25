@@ -1,9 +1,8 @@
 name: Release Please
 
+# Sadece manuel: repoda otomatik release PR / sürüm commit'i istemiyorsan Actions sekmesinden çalıştır.
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 permissions:
   contents: write
