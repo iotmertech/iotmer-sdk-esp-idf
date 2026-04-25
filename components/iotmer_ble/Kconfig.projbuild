@@ -1,0 +1,51 @@
+if SOC_BT_SUPPORTED
+
+menu "IOTMER BLE (JSON channel)"
+
+config IOTMER_BLE
+    bool "Enable IOTMER BLE JSON channel (NimBLE GATT server)"
+    default n
+    help
+        Adds a small GATT service intended for application-layer JSON messages over BLE.
+        This is a general transport; Wi-Fi provisioning can be implemented on top at the app layer.
+
+config IOTMER_BLE_GAP_NAME_PREFIX
+    string "GAP device name prefix"
+    default "IOTMER-"
+    depends on IOTMER_BLE
+    help
+        Advertised name prefix. The implementation appends a short MAC-derived hex suffix.
+
+config IOTMER_BLE_MAX_RX_LEN
+    int "Maximum received JSON bytes per ATT write"
+    default 512
+    range 32 2048
+    depends on IOTMER_BLE
+    help
+        Upper bound for a single received JSON frame. Centrals should request a larger MTU.
+
+config IOTMER_BLE_RESTART_ADV_ON_DISCONNECT
+    bool "Resume advertising after disconnect"
+    default y
+    depends on IOTMER_BLE
+
+config IOTMER_BLE_SMP_IO_CAP
+    int "BLE SMP IO capability (NimBLE ble_hs_cfg.sm_io_cap)"
+    default 3
+    range 0 4
+    depends on IOTMER_BLE
+    help
+        0=DISPLAY_ONLY, 1=DISPLAY_YESNO, 2=KEYBOARD_ONLY, 3=NO_IO (Just Works), 4=KEYBOARD_DISP.
+
+config IOTMER_BLE_REQUIRE_ENC
+    bool "Require link encryption for writes"
+    default y
+    depends on IOTMER_BLE
+    help
+        When enabled, the RX characteristic requires encrypted writes. This improves security but
+        requires the central to pair/bond (or otherwise enable encryption) before sending JSON.
+
+endmenu
+
+endif # SOC_BT_SUPPORTED
+

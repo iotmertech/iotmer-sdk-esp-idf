@@ -1,9 +1,0 @@
-name: iotmer_ble_wifi_prov
-version: "0.1.0"
-description: "IOTMER BLE GATT Wi-Fi credential provisioning (NimBLE, protocol v1)"
-license: "MIT"
-# Local companion to `iotmer` (same repository / EXTRA_COMPONENT_DIRS).
-dependencies:
-  idf: ">=5.0.0"
-  iotmer:
-    path: ../iotmer
