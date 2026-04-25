@@ -11,7 +11,13 @@ permissions:
 
 jobs:
   release-please:
+    # Eğer release-please (GitHub App) veya aynı adla otomasyon ana branch'e push atarsa
+    # bu job'ı atla — gereksiz tekrar koşuları (ve nadir re-entrance senaryolarını) önler.
+    if: github.actor != 'release-please[bot]'
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-please-main
+      cancel-in-progress: false
     steps:
       - uses: googleapis/release-please-action@v4
         with:
