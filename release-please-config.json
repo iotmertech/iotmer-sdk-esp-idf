@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "go",
+  "include-v-in-tag": true,
+  "include-component-in-tag": false,
+  "packages": {
+    ".": {
+      "extra-files": [
+        {
+          "type": "yaml",
+          "path": "components/iotmer/idf_component.yml",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "yaml",
+          "path": "components/iotmer_ble/idf_component.yml",
+          "jsonpath": "$.version"
+        }
+      ]
+    }
+  }
+}
+
