@@ -31,9 +31,16 @@ for published **components** (`components/iotmer/idf_component.yml` versions).
 - **Docs (`docs/sdk/esp-idf/`):** `intro`, `index`, `examples`, `configuration`, `provisioning`, `troubleshooting`, `ble-wifi-provisioning` updated for the features above.
 - **`iotmer_provision`:** after a successful parse, logs whether **`device_http_token`** is `set` or `absent` (token value is **never** logged), aligned with current **`POST …/provision/device`** JSON.
 - **`iotmer` Kconfig:** BLE-specific options moved to `components/iotmer_ble_wifi_prov/Kconfig.projbuild` so symbols exist whenever the companion component is present in the build.
+- Optional component **`iotmer_ble`**: NimBLE GATT JSON channel used as the base transport for BLE provisioning and device commands.
+- Example **`examples/05_ble_json`**: reference JSON command contract over BLE (includes `wifi.set` / `wifi.clear` demo).
+- English SDK docs **`docs/sdk/esp-idf/ble-json-channel.md`** and **`docs/sdk/esp-idf/ble-json-provisioning.md`**.
 
 ### Fixed
 
-- NimBLE `BLE_UUID128_INIT` byte order for clock field so centrals see canonical UUID `…-8024-…` (matches `IOTMER_BLE_WIFI_PROV_UUID_*_STR` in the public header).
+- NimBLE `BLE_UUID128_INIT` byte order for clock field so centrals see canonical UUID `…-8024-…`.
 - Legacy advertising payload size: service UUID in advertising PDU, GAP name in **scan response** (fits within 31-byte legacy limits).
 - `iotmer_ble_wifi_prov` **CMake** always declares `REQUIRES bt` / `PRIV_REQUIRES bt` so NimBLE headers resolve; stub path when `CONFIG_IOTMER_BLE_WIFI_PROV` is off is implemented in C with `#if CONFIG_IOTMER_BLE_WIFI_PROV`.
+
+### Changed
+
+- BLE provisioning is now defined as a JSON contract over `iotmer_ble` (transport), instead of a dedicated BLE provisioning component.
