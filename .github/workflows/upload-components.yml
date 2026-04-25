@@ -44,9 +44,7 @@ jobs:
         with:
           submodules: recursive
 
-      # 403: components.espressif.com → iotmertech namespace → iotmer_ble için bu API token'ı uploader yap.
       - name: Validate iotmer_ble (no publish)
-        continue-on-error: true
         uses: espressif/upload-components-ci-action@v2
         with:
           namespace: "iotmertech"
