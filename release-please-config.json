@@ -1,16 +1,24 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "release-type": "go",
+  "separate-pull-requests": true,
   "include-v-in-tag": true,
-  "include-component-in-tag": false,
+  "include-component-in-tag": true,
   "packages": {
-    ".": {
+    "components/iotmer": {
+      "component": "iotmer",
+      "release-type": "simple",
       "extra-files": [
         {
           "type": "yaml",
           "path": "components/iotmer/idf_component.yml",
           "jsonpath": "$.version"
-        },
+        }
+      ]
+    },
+    "components/iotmer_ble": {
+      "component": "iotmer_ble",
+      "release-type": "simple",
+      "extra-files": [
         {
           "type": "yaml",
           "path": "components/iotmer_ble/idf_component.yml",
@@ -20,4 +28,3 @@
     }
   }
 }
-

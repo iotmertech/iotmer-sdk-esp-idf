@@ -1,4 +1,4 @@
-name: "iotmer-ble"
+name: "iotmer_ble"
 version: "0.1.0"
 description: "IOTMER BLE JSON channel (NimBLE GATT transport) for ESP-IDF"
 license: "MIT"
@@ -15,6 +15,13 @@ targets:
   - "esp32s3"
   - "esp32c3"
   - "esp32c6"
+files:
+  include:
+    - "CMakeLists.txt"
+    - "Kconfig.projbuild"
+    - "README.md"
+    - "*.c"
+    - "include/**"
 dependencies:
   idf: ">=5.0.0"
 
