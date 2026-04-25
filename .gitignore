@@ -58,6 +58,9 @@ Thumbs.db
 # Logs & debug
 *.log
 
+# Local docs scaffold (not pushed to GitHub; see docs.iotmer.com / internal copies)
+docs/
+
 .envrc
 .env
 
