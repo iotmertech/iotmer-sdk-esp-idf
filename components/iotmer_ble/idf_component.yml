@@ -1,4 +1,4 @@
-name: "iotmer_ble"
+name: "iotmer-ble"
 version: "0.1.0"
 description: "IOTMER BLE JSON channel (NimBLE GATT transport) for ESP-IDF"
 license: "MIT"

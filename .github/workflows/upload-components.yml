@@ -11,8 +11,9 @@ on:
       - ".github/workflows/upload-components.yml"
 
 jobs:
-  validate_upload_dry_run:
-    name: Validate upload (dry-run)
+  # Ayrı job: biri 403/izin hatası verse diğeri yeşil kalır; registry'de her bileşen ayrı kayıt/izin ister.
+  validate_iotmer:
+    name: Validate iotmer (dry-run)
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -22,103 +23,73 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Validate component packaging (no publish)
+      - name: Validate iotmer (no publish)
         uses: espressif/upload-components-ci-action@v2
         with:
           namespace: "iotmertech"
           components: |
             iotmer: components/iotmer
-            iotmer_ble: components/iotmer_ble
           api_token: ${{ secrets.IDF_COMPONENT_API_TOKEN }}
           dry_run: true
 
-  upload_components:
-    name: Upload components (publish)
+  validate_iotmer_ble:
+    name: Validate iotmer-ble (dry-run)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Validate iotmer-ble (no publish)
+        uses: espressif/upload-components-ci-action@v2
+        with:
+          namespace: "iotmertech"
+          components: |
+            iotmer-ble: components/iotmer_ble
+          api_token: ${{ secrets.IDF_COMPONENT_API_TOKEN }}
+          dry_run: true
+
+  upload_iotmer:
+    name: Publish iotmer
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
           submodules: recursive
 
-      - name: Set component version from tag (workspace)
-        shell: bash
-        run: |
-          set -euo pipefail
-          export VERSION="${GITHUB_REF_NAME#v}"
-          python3 - <<'PY'
-          import os, re, sys
-
-          version = os.environ["VERSION"]
-          paths = [
-              "components/iotmer/idf_component.yml",
-              "components/iotmer_ble/idf_component.yml",
-          ]
-
-          for p in paths:
-              with open(p, "r", encoding="utf-8") as f:
-                  s = f.read()
-              s2, n = re.subn(r'(?m)^version:\s*".*?"\s*$', f'version: "{version}"', s, count=1)
-              if n != 1:
-                  s2, n = re.subn(r'(?m)^version:\s*.*\s*$', f'version: "{version}"', s, count=1)
-              if n != 1:
-                  raise SystemExit(f"Failed to update version in {p}")
-              with open(p, "w", encoding="utf-8") as f:
-                  f.write(s2)
-          PY
-
-      - name: Commit version bump to main
-        shell: bash
-        run: |
-          set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-
-          git fetch origin main
-          git checkout main
-
-          # apply the same version bump on main branch
-          python3 - <<'PY'
-          import os, re
-          version = os.environ["VERSION"]
-          paths = [
-              "components/iotmer/idf_component.yml",
-              "components/iotmer_ble/idf_component.yml",
-          ]
-          for p in paths:
-              with open(p, "r", encoding="utf-8") as f:
-                  s = f.read()
-              s2, n = re.subn(r'(?m)^version:\s*".*?"\s*$', f'version: "{version}"', s, count=1)
-              if n != 1:
-                  s2, n = re.subn(r'(?m)^version:\s*.*\s*$', f'version: "{version}"', s, count=1)
-              if n != 1:
-                  raise SystemExit(f"Failed to update version in {p}")
-              with open(p, "w", encoding="utf-8") as f:
-                  f.write(s2)
-          PY
-
-          if git diff --quiet; then
-            echo "No version changes to commit."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add components/iotmer/idf_component.yml components/iotmer_ble/idf_component.yml
-          git commit -m "chore(release): bump component versions to ${VERSION} [skip ci]"
-          git push origin main
-        env:
-          VERSION: ${{ github.ref_name }}
-
-      - name: Upload components to ESP Component Registry
+      - name: Upload iotmer to ESP Component Registry
         uses: espressif/upload-components-ci-action@v2
         with:
           namespace: "iotmertech"
           components: |
             iotmer: components/iotmer
-            iotmer_ble: components/iotmer_ble
+          api_token: ${{ secrets.IDF_COMPONENT_API_TOKEN }}
+          version: ${{ github.ref_name }}
+
+  upload_iotmer_ble:
+    name: Publish iotmer-ble
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Upload iotmer-ble to ESP Component Registry
+        uses: espressif/upload-components-ci-action@v2
+        with:
+          namespace: "iotmertech"
+          components: |
+            iotmer-ble: components/iotmer_ble
           api_token: ${{ secrets.IDF_COMPONENT_API_TOKEN }}
           version: ${{ github.ref_name }}
