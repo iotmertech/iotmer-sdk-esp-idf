@@ -38,6 +38,6 @@ direct_dependencies:
 - espressif/mqtt
 - espressif/zlib
 - idf
-manifest_hash: 149f35d84fcaa20d1bdf36c5847bd84a2a1e255742a38774ef20b10d4aca83aa
+manifest_hash: 9d3265c6e64ffe22267636724bb33479e1568ebfcd21a1e39175c725754ae000
 target: esp32c3
 version: 3.0.0
