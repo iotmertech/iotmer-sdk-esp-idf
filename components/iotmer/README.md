@@ -29,6 +29,8 @@ Then:
 idf.py update-dependencies
 ```
 
+**Registry:** [`iotmertech/iotmer` on ESP Component Registry](https://components.espressif.com/components/iotmertech/iotmer) (version-agnostic URL; the site shows **Latest**). Optional BLE component: [`iotmertech/iotmer_ble`](https://components.espressif.com/components/iotmertech/iotmer_ble).
+
 ## Usage
 
 Minimal bring-up (NVS + init + connect):

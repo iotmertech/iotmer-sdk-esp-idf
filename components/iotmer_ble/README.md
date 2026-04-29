@@ -2,6 +2,10 @@
 
 `iotmer_ble` adds a small **BLE GATT JSON channel** built on **ESP-IDF NimBLE**.
 
+**ESP Component Registry:** [`iotmertech/iotmer_ble`](https://components.espressif.com/components/iotmertech/iotmer_ble) — link points at the component page (**Latest**); you do not need to edit docs when you publish a new version.
+
+Add to `idf_component.yml`: `iotmertech/iotmer_ble: "*"` then `idf.py update-dependencies`.
+
 - **Purpose**: A general transport for UTF-8 JSON messages between a phone/PC and the device.
 - **Relation to provisioning**: Wi‑Fi provisioning is implemented *on top* of this channel via the JSON contract in `docs/sdk/esp-idf/ble-json-provisioning.md` (see `examples/05_ble_json`).
 

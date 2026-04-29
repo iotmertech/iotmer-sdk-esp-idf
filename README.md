@@ -40,6 +40,11 @@ dependencies:
 idf.py update-dependencies
 ```
 
+Published packages on the **ESP Component Registry** (always shows the latest uploaded version — no doc churn per release):
+
+- [`iotmertech/iotmer`](https://components.espressif.com/components/iotmertech/iotmer)
+- [`iotmertech/iotmer_ble`](https://components.espressif.com/components/iotmertech/iotmer_ble) (optional BLE JSON channel)
+
 **Submodule:**
 
 ```bash
