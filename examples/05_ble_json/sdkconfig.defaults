@@ -18,3 +18,17 @@ CONFIG_BT_NIMBLE_GATT_SERVER=y
 # Optional: avoid flash size warning on common 4MB modules
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 
+# This example pulls in HTTPS provisioning + device-auth to perform bind-claim,
+# so the default 1MB app partition can be too small.
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# TLS / HTTPS: use the built-in certificate bundle.
+# Fixes errors like: "esp-x509-crt-bundle: No matching trusted root certificate found"
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y
+
+# This example only performs bind-claim over HTTPS (no OTA).
+CONFIG_IOTMER_AUTO_OTA=n
+CONFIG_IOTMER_FIRMWARE_POLL=n
+

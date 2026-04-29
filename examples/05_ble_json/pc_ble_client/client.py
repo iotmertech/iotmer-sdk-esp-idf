@@ -175,6 +175,9 @@ async def main():
 
     ap.add_argument("--ssid", default=None)
     ap.add_argument("--pass", dest="password", default=None)
+    ap.add_argument("--claim-code", default=None, help="Optional claim_code for wifi.set")
+    ap.add_argument("--rid", default=None, help="Override request rid")
+    ap.add_argument("--resp-timeout", type=float, default=15.0, help="Seconds to wait for matching response")
     args = ap.parse_args()
 
     if args.scan:
@@ -254,17 +257,31 @@ async def main():
 
             await client.start_notify(tx_char, on_tx)
 
+            expected_rid = args.rid
             if args.send is not None:
                 payload = args.send
+                if expected_rid is None:
+                    try:
+                        parsed = json.loads(payload)
+                        if isinstance(parsed, dict):
+                            expected_rid = parsed.get("rid")
+                    except Exception:
+                        expected_rid = None
             elif args.ping:
-                payload = json.dumps({"type": "ping", "rid": "1"})
+                expected_rid = expected_rid or "p1"
+                payload = json.dumps({"type": "ping", "rid": expected_rid}, separators=(",", ":"))
             elif args.wifi_set:
                 if not args.ssid or args.password is None:
                     print("--wifi-set requires --ssid and --pass", file=sys.stderr)
                     return 2
-                payload = json.dumps({"type": "wifi.set", "rid": "2", "ssid": args.ssid, "pass": args.password})
+                expected_rid = expected_rid or "req-001"
+                req = {"type": "wifi.set", "rid": expected_rid, "ssid": args.ssid, "pass": args.password}
+                if args.claim_code:
+                    req["claim_code"] = args.claim_code
+                payload = json.dumps(req, separators=(",", ":"))
             elif args.wifi_clear:
-                payload = json.dumps({"type": "wifi.clear", "rid": "3"})
+                expected_rid = expected_rid or "3"
+                payload = json.dumps({"type": "wifi.clear", "rid": expected_rid}, separators=(",", ":"))
             else:
                 print("No command given. Use --ping/--wifi-set/--wifi-clear/--send.", file=sys.stderr)
                 return 2
@@ -272,12 +289,28 @@ async def main():
             print(f"TX->RX: {payload}")
             await client.write_gatt_char(rx_char, payload.encode("utf-8"), response=True)
 
-            # Wait for one response (or more if user keeps the script running).
+            # Wait until we receive at least one JSON response matching rid (or print timeout).
             try:
-                resp = await asyncio.wait_for(notif_queue.get(), timeout=10.0)
-                print(f"RX<-TX: {resp}")
+                while True:
+                    resp = await asyncio.wait_for(notif_queue.get(), timeout=args.resp_timeout)
+                    print(f"RX<-TX raw: {resp}")
+                    try:
+                        obj = json.loads(resp)
+                    except Exception:
+                        continue
+
+                    if expected_rid is None:
+                        print(f"RX<-TX json: {obj}")
+                        break
+
+                    if isinstance(obj, dict) and obj.get("rid") == expected_rid:
+                        print(f"RX<-TX match(rid={expected_rid}): {obj}")
+                        break
             except asyncio.TimeoutError:
-                print("No TX notification received (timeout).", file=sys.stderr)
+                if expected_rid:
+                    print(f"No matching TX notification for rid={expected_rid} (timeout).", file=sys.stderr)
+                else:
+                    print("No TX notification received (timeout).", file=sys.stderr)
                 return 5
             finally:
                 await client.stop_notify(tx_char)

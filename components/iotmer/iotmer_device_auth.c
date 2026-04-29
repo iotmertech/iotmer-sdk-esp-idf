@@ -14,6 +14,18 @@
 
 #define TAG "iotmer_device_auth"
 
+static void log_bind_error_body(const char *body)
+{
+    if (body == NULL || body[0] == '\0') {
+        ESP_LOGW(TAG, "bind-claim error body: <empty>");
+        return;
+    }
+
+    /* Keep logs safe/short; backend usually returns compact JSON with code/message. */
+    size_t len = strlen(body);
+    ESP_LOGW(TAG, "bind-claim error body (len=%zu): %.240s", len, body);
+}
+
 static esp_err_t http_post_bearer_json(const char *url, const char *bearer, const char *body,
                                        char *resp, size_t resp_len, int *http_status_out)
 {
@@ -154,8 +166,21 @@ esp_err_t iotmer_device_auth_bind_claim(const iotmer_creds_t *creds, const char 
         return ESP_ERR_INVALID_RESPONSE;
     }
 
-    ESP_LOGW(TAG, "bind-claim failed HTTP %d (body redacted in production; len=%zu)", http_status,
-             strlen(s_bind_resp));
+    ESP_LOGW(TAG, "bind-claim failed HTTP %d", http_status);
+    log_bind_error_body(s_bind_resp);
+
+    cJSON *jr = cJSON_Parse(s_bind_resp);
+    if (jr) {
+        const cJSON *code = cJSON_GetObjectItemCaseSensitive(jr, "code");
+        const cJSON *msg  = cJSON_GetObjectItemCaseSensitive(jr, "message");
+        if (cJSON_IsString(code) && code->valuestring) {
+            ESP_LOGW(TAG, "bind-claim backend code=%s", code->valuestring);
+        }
+        if (cJSON_IsString(msg) && msg->valuestring) {
+            ESP_LOGW(TAG, "bind-claim backend message=%s", msg->valuestring);
+        }
+        cJSON_Delete(jr);
+    }
 
     if (http_status == 401) {
         return ESP_ERR_INVALID_ARG;

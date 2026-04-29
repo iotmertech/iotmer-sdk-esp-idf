@@ -7,7 +7,9 @@ CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 
 # Auto-OTA after provision needs two OTA app slots.
-CONFIG_PARTITION_TABLE_TWO_OTA=y
+# Default "two_ota" slots are often 1 MiB; with TLS + bundle the app can exceed that.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_ota_4mb.csv"
 
 # Provisioning image: always run OTA when the server returns URL + checksum (do not skip on
 # matching NVS applied SHA — same-hash rebuilds / forced redeploy still flash).

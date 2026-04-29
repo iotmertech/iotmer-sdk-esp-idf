@@ -1,0 +1,13 @@
+# 4MB flash: factory + 2 OTA slots sized for ~1.3MB apps
+# Name,   Type, SubType, Offset,   Size,     Flags
+nvs,      data, nvs,     0x9000,   0x6000,
+otadata,  data, ota,     0xF000,   0x2000,
+phy_init, data, phy,     0x11000,  0x1000,
+
+# App partitions (each 0x140000 = 1310720 bytes)
+factory,  app,  factory, 0x20000,  0x140000,
+ota_0,    app,  ota_0,            ,0x140000,
+ota_1,    app,  ota_1,            ,0x140000,
+
+# Remaining flash (~128KB)
+storage,  data, spiffs,           ,0x20000,
