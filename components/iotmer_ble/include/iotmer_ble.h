@@ -74,6 +74,13 @@ esp_err_t iotmer_ble_send_json_str(const char *json_str);
 /** True when a BLE central is currently connected. */
 bool iotmer_ble_is_connected(void);
 
+/**
+ * Returns the currently negotiated ATT MTU for the active connection.
+ *
+ * @return ATT MTU value when connected; otherwise 0.
+ */
+uint16_t iotmer_ble_get_att_mtu(void);
+
 #ifdef __cplusplus
 }
 #endif

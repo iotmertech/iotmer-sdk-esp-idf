@@ -15,6 +15,7 @@
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 
+#include "host/ble_att.h"
 #include "host/ble_gap.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
@@ -297,6 +298,21 @@ bool iotmer_ble_is_connected(void)
     return s_connected;
 }
 
+uint16_t iotmer_ble_get_att_mtu(void)
+{
+    if (!s_inited) {
+        return 0;
+    }
+
+    uint16_t mtu = 0;
+    ble_hs_lock();
+    if (s_connected) {
+        mtu = ble_att_mtu(s_conn_handle);
+    }
+    ble_hs_unlock();
+    return mtu;
+}
+
 esp_err_t iotmer_ble_send_json(const uint8_t *data, size_t len)
 {
     if (!s_inited) {
@@ -381,6 +397,11 @@ esp_err_t iotmer_ble_send_json_str(const char *json_str)
 bool iotmer_ble_is_connected(void)
 {
     return false;
+}
+
+uint16_t iotmer_ble_get_att_mtu(void)
+{
+    return 0;
 }
 
 #endif
