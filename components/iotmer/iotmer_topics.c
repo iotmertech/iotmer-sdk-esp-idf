@@ -5,8 +5,8 @@
  *
  *   {workspace_slug}/{device_key}/telemetry   publish
  *   {workspace_slug}/{device_key}/state       publish
- *   {workspace_slug}/{device_key}/presence/   publish (retained, ONLINE/OFFLINE)
- *   {workspace_slug}/{device_key}/cmd/#       subscribe
+ *   {workspace_slug}/{device_key}/presence    publish (retained, ONLINE/OFFLINE)
+ *   {workspace_slug}/{device_key}/cmd         subscribe
  *   {workspace_slug}/{device_key}/config/#    subscribe
  *
  * iotmer_topics_build_publish() and subscribe helpers are free of dynamic allocation:
@@ -55,7 +55,7 @@ esp_err_t iotmer_topics_subscribe_cmd(char *out, size_t out_len,
         return ESP_ERR_INVALID_ARG;
     }
 
-    int n = snprintf(out, out_len, "%s/%s/cmd/#", workspace_slug, device_key);
+    int n = snprintf(out, out_len, "%s/%s/cmd", workspace_slug, device_key);
     if (n < 0 || (size_t)n >= out_len) {
         ESP_LOGE(TAG, "cmd subscribe filter too long (need %d, have %zu)", n + 1, out_len);
         return ESP_ERR_NO_MEM;
@@ -88,11 +88,11 @@ bool iotmer_topics_match_cmd(const char *topic, const char *workspace_slug,
         return false;
     }
     char p[256];
-    int n = snprintf(p, sizeof(p), "%s/%s/cmd/", workspace_slug, device_key);
+    int n = snprintf(p, sizeof(p), "%s/%s/cmd", workspace_slug, device_key);
     if (n < 0 || (size_t)n >= sizeof(p)) {
         return false;
     }
-    return strncmp(topic, p, (size_t)n) == 0;
+    return strcmp(topic, p) == 0;
 }
 
 bool iotmer_topics_match_config(const char *topic, const char *workspace_slug,

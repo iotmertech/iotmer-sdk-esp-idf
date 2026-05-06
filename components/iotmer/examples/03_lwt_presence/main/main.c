@@ -34,7 +34,7 @@ void app_main(void)
     /*
      * Presence flow:
      * - MQTT_EVENT_CONNECTED publishes retained "ONLINE" to:
-     *     {workspace_slug}/{device_key}/presence/
+     *     {workspace_slug}/{device_key}/presence
      * - If power/network drops without a clean MQTT disconnect,
      *   broker publishes retained LWT "OFFLINE" to the same topic.
      */

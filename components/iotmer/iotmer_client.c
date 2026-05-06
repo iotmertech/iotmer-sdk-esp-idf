@@ -280,7 +280,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
         if (client->commands_cb) {
             esp_err_t e = subscribe_commands_filter(client);
             if (e != ESP_OK) {
-                ESP_LOGW(TAG, "cmd/# resubscribe failed: %s", esp_err_to_name(e));
+                ESP_LOGW(TAG, "cmd resubscribe failed: %s", esp_err_to_name(e));
             }
         }
         if (client->config_cb) {
@@ -599,7 +599,7 @@ esp_err_t iotmer_connect(iotmer_client_t *client)
         err = iotmer_topics_build_publish(client->presence_topic, sizeof(client->presence_topic),
                                           client->creds.workspace_slug,
                                           client->creds.device_key,
-                                          "presence/");
+                                          "presence");
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "presence topic build failed: %s", esp_err_to_name(err));
             goto fail_timer;

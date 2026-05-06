@@ -53,7 +53,7 @@ typedef struct {
 
     /**
      * Presence (LWT) feature:
-     * - On connect: publish retained "ONLINE" to {workspace_slug}/{device_key}/presence/
+     * - On connect: publish retained "ONLINE" to {workspace_slug}/{device_key}/presence
      * - On unexpected disconnect: broker publishes retained "OFFLINE" (MQTT last will) to same topic
      */
     bool presence_lwt_enable;
