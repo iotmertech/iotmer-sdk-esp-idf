@@ -144,6 +144,10 @@ static void ble_start_advertising(void)
         return;
     }
 
+    if (ble_gap_adv_active()) {
+        (void)ble_gap_adv_stop();
+    }
+
     struct ble_hs_adv_fields adv = {0};
     adv.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
 
@@ -179,10 +183,12 @@ static void ble_start_advertising(void)
     params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
     rc = ble_gap_adv_start(s_own_addr_type, NULL, BLE_HS_FOREVER, &params, gap_event, NULL);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "adv start failed rc=%d", rc);
-    } else {
+    if (rc == 0) {
         ESP_LOGI(TAG, "Advertising started");
+    } else if (rc == BLE_HS_EALREADY) {
+        ESP_LOGD(TAG, "Advertising already active or start in progress");
+    } else {
+        ESP_LOGE(TAG, "adv start failed rc=%d", rc);
     }
 }
 
