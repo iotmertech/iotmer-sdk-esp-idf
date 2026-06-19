@@ -58,6 +58,18 @@ typedef struct {
     } u;
 } iotmer_config_event_t;
 
+/**
+ * Config protocol event callback.
+ *
+ * Default (CONFIG_IOTMER_CONFIG_DEFER_CALLBACKS=y): invoked on the SDK config worker
+ * task — safe to call iotmer_config_request(), iotmer_config_publish_status(), and
+ * other blocking application logic.
+ *
+ * When defer is disabled: invoked synchronously from the MQTT event handler; keep the
+ * callback short and avoid heavy work.
+ *
+ * For IOTMER_CONFIG_EV_CONFIG_JSON, json_utf8 is valid only until the callback returns.
+ */
 typedef void (*iotmer_config_event_cb_t)(void *user_ctx, const iotmer_config_event_t *ev);
 
 /**
@@ -104,7 +116,8 @@ void iotmer_config_clear_have(iotmer_config_ctx_t *ctx);
 
 /**
  * Dispatch `config/#` MQTT payload (call from `iotmer_subscribe_config` callback).
- * Parses `config/meta` and `config/resp`.
+ * Parses `config/meta` and `config/resp` in the MQTT event context; user events are
+ * delivered via iotmer_config_event_cb_t (on the config worker task when defer is enabled).
  */
 esp_err_t iotmer_config_on_mqtt(iotmer_config_ctx_t *ctx,
                                iotmer_client_t *client,

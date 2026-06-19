@@ -44,3 +44,7 @@ Committing `dependencies.lock` is recommended for CI and reproducible builds.
   - `want.max_total_bytes=1048576`
   - `want.accept_encoding`: `["gzip","identity"]`
 - Receives `…/config/resp` as one or more **chunked** messages (`chunk_index`, `data_b64`), validates SHA-256 over the reassembled effective JSON, prints a preview, then publishes `…/config/status`.
+
+## Callback context
+
+By default (`CONFIG_IOTMER_CONFIG_DEFER_CALLBACKS=y`), `on_cfg_event` runs on the SDK **config worker task**, not in the MQTT event handler. It is safe to call `iotmer_config_request()` and `iotmer_config_publish_status()` from the callback. MQTT parsing still happens in the subscribe callback; only the user event delivery is deferred.

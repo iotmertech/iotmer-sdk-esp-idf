@@ -43,6 +43,16 @@ bool iotmer_topics_match_cmd(const char *topic, const char *workspace_slug,
 bool iotmer_topics_match_config(const char *topic, const char *workspace_slug,
                                 const char *device_key);
 
+/**
+ * Enqueue an MQTT publish for delivery by the mqtt client task.
+ * Safe from any task, including the MQTT event handler.
+ */
+esp_err_t iotmer_mqtt_publish(iotmer_client_t *client,
+                              const char *topic,
+                              const char *payload,
+                              int qos,
+                              int retain);
+
 #ifdef __cplusplus
 }
 #endif

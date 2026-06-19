@@ -8,6 +8,23 @@ for published **components** (`components/iotmer/idf_component.yml` versions).
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-06-19
+
+### Added
+
+- **`iotmer`:** Internal `iotmer_mqtt_publish()` helper — all SDK MQTT publishes use `esp_mqtt_client_enqueue()` so delivery runs in the mqtt client task (safe from any task, including the MQTT event handler).
+- **`iotmer`:** Config protocol user callbacks are deferred to an SDK worker task by default (`CONFIG_IOTMER_CONFIG_DEFER_CALLBACKS`, menuconfig **IOTMER**). Queue depth, stack, and priority are configurable.
+
+### Changed
+
+- **`iotmer_config.h`:** Documents which task invokes `iotmer_config_event_cb_t` and when defer is disabled (synchronous MQTT context).
+- **Example `04_config`:** README and `on_cfg_event` note that the callback runs on the config worker task; `iotmer_config_request()` / `iotmer_config_publish_status()` from the callback are the supported pattern.
+
+### Fixed
+
+- **MQTT thread safety:** Telemetry, presence, and config publishes no longer call `esp_mqtt_client_publish()` from the MQTT event chain or cross-task without enqueue — addresses reentrancy / WDT and queue assert crashes reported in the field.
+- **Presence / subscribe topics:** Trailing slashes removed from presence publish topic and command subscription filters for consistency with console ACL layout.
+
 ## [0.1.12] - 2026-04-24
 
 ### Added

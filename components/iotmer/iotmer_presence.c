@@ -12,7 +12,6 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
-#include "mqtt_client.h"
 
 #include "iotmer_internal.h"
 
@@ -42,22 +41,13 @@ esp_err_t iotmer_presence_publish(iotmer_client_t *client, const char *status)
         return err;
     }
 
-    /*
-     * len=0 tells the MQTT client to use strlen(status).
-     * retain=1 so subscribers get the latest status immediately.
-     * QoS=1 for at-least-once delivery.
-     */
-    int msg_id = esp_mqtt_client_publish(
-        (esp_mqtt_client_handle_t)client->mqtt,
-        topic, status,
-        0 /* len */, 1 /* QoS 1 */, 1 /* retain */);
-
-    if (msg_id < 0) {
-        ESP_LOGE(TAG, "publish(%s) enqueue failed", topic);
-        return ESP_FAIL;
+    esp_err_t pub_err = iotmer_mqtt_publish(client, topic, status, 1 /* QoS 1 */, 1 /* retain */);
+    if (pub_err != ESP_OK) {
+        ESP_LOGE(TAG, "publish presence failed: %s", esp_err_to_name(pub_err));
+        return pub_err;
     }
 
-    ESP_LOGI(TAG, "presence published: %s => %s (msg_id=%d)", topic, status, msg_id);
+    ESP_LOGI(TAG, "presence queued: %s => %s", topic, status);
     return ESP_OK;
 }
 

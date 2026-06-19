@@ -5,13 +5,13 @@
  * same internal publish_suffix function, differing only in the topic suffix.
  *
  * QoS 1 is used for all publishes: at-least-once delivery with broker ACK.
+ * Publishes are enqueued via iotmer_mqtt_publish() for mqtt-task delivery.
  */
 
 #include <string.h>
 
 #include "esp_err.h"
 #include "esp_log.h"
-#include "mqtt_client.h"
 
 #include "iotmer_internal.h"
 
@@ -43,22 +43,13 @@ static esp_err_t publish_suffix(iotmer_client_t *client,
         return err;
     }
 
-    /*
-     * len=0 tells the MQTT client to use strlen(json).
-     * retain=0: telemetry and state messages are not retained.
-     * QoS=1: at-least-once, confirmed by PUBACK.
-     */
-    int msg_id = esp_mqtt_client_publish(
-        (esp_mqtt_client_handle_t)client->mqtt,
-        topic, json,
-        0 /* len */, 1 /* QoS 1 */, 0 /* retain */);
-
-    if (msg_id < 0) {
-        ESP_LOGE(TAG, "publish(%s) enqueue failed", topic);
-        return ESP_FAIL;
+    esp_err_t pub_err = iotmer_mqtt_publish(client, topic, json, 1 /* QoS 1 */, 0 /* retain */);
+    if (pub_err != ESP_OK) {
+        ESP_LOGE(TAG, "publish(%s) failed: %s", suffix, esp_err_to_name(pub_err));
+        return pub_err;
     }
 
-    ESP_LOGD(TAG, "publish queued: topic=%s msg_id=%d", topic, msg_id);
+    ESP_LOGD(TAG, "publish queued: topic=%s", topic);
     return ESP_OK;
 }
 

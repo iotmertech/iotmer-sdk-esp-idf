@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "iotmer_client.c"
+        "iotmer_mqtt.c"
         "iotmer_telemetry.c"
         "iotmer_presence.c"
         "iotmer_topics.c"

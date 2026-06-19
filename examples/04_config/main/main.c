@@ -19,6 +19,10 @@ static uint8_t s_cfg_buf[65536];
 
 static void on_cfg_event(void *user, const iotmer_config_event_t *ev)
 {
+    /*
+     * Runs on the SDK config worker task (CONFIG_IOTMER_CONFIG_DEFER_CALLBACKS, default y).
+     * Safe to call iotmer_config_request() / iotmer_config_publish_status() here.
+     */
     (void)user;
     switch (ev->type) {
     case IOTMER_CONFIG_EV_META:

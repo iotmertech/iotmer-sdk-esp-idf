@@ -11,7 +11,11 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_random.h"
-#include "mqtt_client.h"
+#include "sdkconfig.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 
 #include "cJSON.h"
 #include "mbedtls/base64.h"
@@ -22,6 +26,19 @@
 #include "iotmer_internal.h"
 
 #define TAG "iotmer_config"
+
+static void transfer_reset(iotmer_config_ctx_t *ctx);
+static esp_err_t config_emit_event(iotmer_config_ctx_t *ctx,
+                                   iotmer_config_event_cb_t cb,
+                                   void *user_ctx,
+                                   const iotmer_config_event_t *ev,
+                                   bool reset_transfer);
+static esp_err_t emit_fail(iotmer_config_ctx_t *ctx,
+                           iotmer_config_event_cb_t cb,
+                           void *user_ctx,
+                           const char *rid,
+                           const char *msg,
+                           bool reset_transfer);
 
 /* -------------------------------------------------------------------------- */
 /* Small helpers                                                              */
@@ -40,22 +57,6 @@ static bool topic_suffix_is(const char *topic, const char *suffix)
     size_t lt = strlen(topic);
     size_t ls = strlen(suffix);
     return (lt >= ls) && (strcmp(topic + (lt - ls), suffix) == 0);
-}
-
-static void emit_fail(iotmer_config_event_cb_t cb, void *user_ctx, const char *rid,
-                      const char *msg)
-{
-    if (!cb) {
-        return;
-    }
-    iotmer_config_event_t ev;
-    memset(&ev, 0, sizeof(ev));
-    ev.type = IOTMER_CONFIG_EV_FAIL;
-    if (rid) {
-        strncpy(ev.rid, rid, sizeof(ev.rid) - 1U);
-    }
-    strncpy(ev.u.fail.message, msg, sizeof(ev.u.fail.message) - 1U);
-    cb(user_ctx, &ev);
 }
 
 static void gen_uuid_v4(char out[IOTMER_CONFIG_RID_LEN])
@@ -129,13 +130,7 @@ static esp_err_t publish_suffix_json(iotmer_client_t *client, const char *suffix
     if (err != ESP_OK) {
         return err;
     }
-    int msg_id = esp_mqtt_client_publish((esp_mqtt_client_handle_t)client->mqtt, topic, json, 0,
-                                         1 /* QoS1 */, 0 /* retain */);
-    if (msg_id < 0) {
-        return ESP_FAIL;
-    }
-    ESP_LOGD(TAG, "publish %s msg_id=%d", topic, msg_id);
-    return ESP_OK;
+    return iotmer_mqtt_publish(client, topic, json, 1 /* QoS 1 */, 0 /* retain */);
 }
 
 static void fmt_iso8601_utc_z(char *out, size_t out_len)
@@ -283,6 +278,122 @@ static void transfer_reset(iotmer_config_ctx_t *ctx)
     ctx->gzip_len           = 0;
     ctx->pending_rid[0]     = '\0';
     memset(ctx->chunk_bmap, 0, sizeof(ctx->chunk_bmap));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Config event dispatch (optional worker task)                                 */
+/* -------------------------------------------------------------------------- */
+
+#if CONFIG_IOTMER_CONFIG_DEFER_CALLBACKS
+
+typedef struct {
+    iotmer_config_ctx_t       *ctx;
+    iotmer_config_event_cb_t   cb;
+    void                      *user_ctx;
+    iotmer_config_event_t      ev;
+    bool                       reset_transfer;
+} config_event_job_t;
+
+static QueueHandle_t s_config_event_queue;
+static TaskHandle_t  s_config_event_task;
+
+static void config_event_task(void *arg)
+{
+    (void)arg;
+    config_event_job_t job;
+    while (xQueueReceive(s_config_event_queue, &job, portMAX_DELAY) == pdTRUE) {
+        if (job.cb) {
+            job.cb(job.user_ctx, &job.ev);
+        }
+        if (job.reset_transfer && job.ctx) {
+            transfer_reset(job.ctx);
+        }
+    }
+}
+
+static esp_err_t config_dispatch_start(void)
+{
+    if (s_config_event_queue) {
+        return ESP_OK;
+    }
+    s_config_event_queue = xQueueCreate(CONFIG_IOTMER_CONFIG_EVENT_QUEUE_LEN,
+                                      sizeof(config_event_job_t));
+    if (!s_config_event_queue) {
+        return ESP_ERR_NO_MEM;
+    }
+    BaseType_t ok = xTaskCreate(config_event_task, "iotmer_cfg",
+                                CONFIG_IOTMER_CONFIG_EVENT_TASK_STACK, NULL,
+                                CONFIG_IOTMER_CONFIG_EVENT_TASK_PRIORITY,
+                                &s_config_event_task);
+    if (ok != pdPASS) {
+        vQueueDelete(s_config_event_queue);
+        s_config_event_queue = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+#endif /* CONFIG_IOTMER_CONFIG_DEFER_CALLBACKS */
+
+static esp_err_t config_emit_event(iotmer_config_ctx_t *ctx,
+                                   iotmer_config_event_cb_t cb,
+                                   void *user_ctx,
+                                   const iotmer_config_event_t *ev,
+                                   bool reset_transfer)
+{
+    if (!cb) {
+        if (reset_transfer && ctx) {
+            transfer_reset(ctx);
+        }
+        return ESP_OK;
+    }
+#if CONFIG_IOTMER_CONFIG_DEFER_CALLBACKS
+    esp_err_t err = config_dispatch_start();
+    if (err != ESP_OK) {
+        if (reset_transfer && ctx) {
+            transfer_reset(ctx);
+        }
+        return err;
+    }
+    config_event_job_t job = {
+        .ctx             = ctx,
+        .cb              = cb,
+        .user_ctx        = user_ctx,
+        .ev              = *ev,
+        .reset_transfer  = reset_transfer,
+    };
+    if (xQueueSend(s_config_event_queue, &job, 0) != pdTRUE) {
+        ESP_LOGE(TAG, "config event queue full");
+        if (reset_transfer && ctx) {
+            transfer_reset(ctx);
+        }
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+#else
+    cb(user_ctx, ev);
+    if (reset_transfer && ctx) {
+        transfer_reset(ctx);
+    }
+    return ESP_OK;
+#endif
+}
+
+static esp_err_t emit_fail(iotmer_config_ctx_t *ctx,
+                           iotmer_config_event_cb_t cb,
+                           void *user_ctx,
+                           const char *rid,
+                           const char *msg,
+                           bool reset_transfer)
+{
+    iotmer_config_event_t ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type = IOTMER_CONFIG_EV_FAIL;
+    if (rid) {
+        strncpy(ev.rid, rid, sizeof(ev.rid) - 1U);
+    }
+    strncpy(ev.u.fail.message, msg, sizeof(ev.u.fail.message) - 1U);
+    return config_emit_event(ctx, cb, user_ctx, &ev, reset_transfer);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -455,7 +566,7 @@ static esp_err_t handle_meta(iotmer_config_ctx_t *ctx, iotmer_client_t *client,
     }
     const size_t h = half_cap(ctx);
     if ((size_t)payload_len + 1U > ctx->cap - h) {
-        emit_fail(cb, user_ctx, NULL, "meta: payload too large for parse buffer");
+        emit_fail(ctx, cb, user_ctx, NULL, "meta: payload too large for parse buffer", false);
         return ESP_ERR_NO_MEM;
     }
     memcpy(ctx->buf + h, payload, (size_t)payload_len);
@@ -463,7 +574,7 @@ static esp_err_t handle_meta(iotmer_config_ctx_t *ctx, iotmer_client_t *client,
 
     cJSON *root = cJSON_Parse((char *)(ctx->buf + h));
     if (!root) {
-        emit_fail(cb, user_ctx, NULL, "meta: JSON parse failed");
+        emit_fail(ctx, cb, user_ctx, NULL, "meta: JSON parse failed", false);
         return ESP_FAIL;
     }
     cJSON *jv = cJSON_GetObjectItemCaseSensitive(root, "version");
@@ -471,7 +582,7 @@ static esp_err_t handle_meta(iotmer_config_ctx_t *ctx, iotmer_client_t *client,
     cJSON *jb = cJSON_GetObjectItemCaseSensitive(root, "bytes");
     if (!cJSON_IsNumber(jv) || !cJSON_IsString(js) || js->valuestring == NULL) {
         cJSON_Delete(root);
-        emit_fail(cb, user_ctx, NULL, "meta: missing version/sha256");
+        emit_fail(ctx, cb, user_ctx, NULL, "meta: missing version/sha256", false);
         return ESP_FAIL;
     }
     uint32_t ver = (uint32_t)jv->valuedouble;
@@ -488,8 +599,7 @@ static esp_err_t handle_meta(iotmer_config_ctx_t *ctx, iotmer_client_t *client,
     ev.u.meta.version = ver;
     strncpy(ev.u.meta.sha256_hex, sha, sizeof(ev.u.meta.sha256_hex) - 1U);
     ev.u.meta.bytes_hint = bytes_hint;
-    cb(user_ctx, &ev);
-    return ESP_OK;
+    return config_emit_event(ctx, cb, user_ctx, &ev, false);
 }
 
 static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
@@ -511,16 +621,14 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
         !cJSON_IsString(jenc) || jenc->valuestring == NULL || !cJSON_IsNumber(jidx) ||
         !cJSON_IsNumber(jtot) || !cJSON_IsString(jb64) || jb64->valuestring == NULL ||
         !cJSON_IsString(jct) || jct->valuestring == NULL || !cJSON_IsNumber(jcb)) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): missing fields");
-        transfer_reset(ctx);
+        emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(chunked): missing fields", true);
         return ESP_FAIL;
     }
     (void)jcb;
 
     if (!content_type_is_application_json(jct->valuestring)) {
-        emit_fail(cb, user_ctx, ctx->pending_rid,
-                  "resp(chunked): content_type must be application/json");
-        transfer_reset(ctx);
+        emit_fail(ctx, cb, user_ctx, ctx->pending_rid,
+                  "resp(chunked): content_type must be application/json", true);
         return ESP_FAIL;
     }
 
@@ -529,8 +637,7 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
         return ESP_OK;
     }
     if (!cJSON_IsTrue(jok)) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): ok!=true");
-        transfer_reset(ctx);
+        emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(chunked): ok!=true", true);
         return ESP_FAIL;
     }
 
@@ -541,8 +648,7 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
     } else if (strstr(enc, "identity") != NULL) {
         path_gzip = false;
     } else {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): encoding unsupported");
-        transfer_reset(ctx);
+        emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(chunked): encoding unsupported", true);
         return ESP_FAIL;
     }
 
@@ -552,8 +658,7 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
     uint32_t tot    = (uint32_t)jtot->valuedouble;
 
     if (tot == 0U || tot > IOTMER_CONFIG_MAX_CHUNKS) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): total_chunks invalid");
-        transfer_reset(ctx);
+        emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(chunked): total_chunks invalid", true);
         return ESP_FAIL;
     }
 
@@ -569,8 +674,7 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
     } else {
         if (ctx->resp_version != ver || strcmp(ctx->resp_sha_hex, sha) != 0 ||
             ctx->total_chunks != tot || ctx->resp_chunk_is_gzip != path_gzip) {
-            emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): inconsistent metadata");
-            transfer_reset(ctx);
+            emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(chunked): inconsistent metadata", true);
             return ESP_FAIL;
         }
     }
@@ -582,9 +686,8 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
         esp_err_t eb =
             b64_decode_append(ctx, jb64->valuestring, strlen(jb64->valuestring));
         if (eb != ESP_OK) {
-            emit_fail(cb, user_ctx, ctx->pending_rid,
-                       "resp(chunked): base64/decode append failed");
-            transfer_reset(ctx);
+            emit_fail(ctx, cb, user_ctx, ctx->pending_rid,
+                       "resp(chunked): base64/decode append failed", true);
             return eb;
         }
     }
@@ -600,21 +703,18 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
     if (ctx->resp_chunk_is_gzip) {
         esp_err_t gi = gunzip_to_upper(ctx, ctx->gzip_len, &json_len);
         if (gi != ESP_OK) {
-            emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): gunzip failed");
-            transfer_reset(ctx);
+            emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(chunked): gunzip failed", true);
             return gi;
         }
         sha_in = ctx->buf + h;
     } else {
         json_len = ctx->gzip_len;
         if (json_len == 0U || json_len > h) {
-            emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): identity payload invalid");
-            transfer_reset(ctx);
+            emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(chunked): identity payload invalid", true);
             return ESP_ERR_NO_MEM;
         }
         if (json_len + 1U > ctx->cap - h) {
-            emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): json too large for buffer");
-            transfer_reset(ctx);
+            emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(chunked): json too large for buffer", true);
             return ESP_ERR_NO_MEM;
         }
         sha_in = ctx->buf;
@@ -623,13 +723,11 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
     char calc[IOTMER_CONFIG_SHA_HEX_LEN];
     esp_err_t se = sha256_bytes(sha_in, json_len, calc);
     if (se != ESP_OK) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): sha256 failed");
-        transfer_reset(ctx);
+        emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(chunked): sha256 failed", true);
         return se;
     }
     if (!sha256_hex_equal_ci(calc, ctx->resp_sha_hex)) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(chunked): sha256 mismatch");
-        transfer_reset(ctx);
+        emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(chunked): sha256 mismatch", true);
         return ESP_ERR_INVALID_CRC;
     }
 
@@ -647,7 +745,7 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
         strncpy(ev.u.config.sha256_hex, ctx->resp_sha_hex, sizeof(ev.u.config.sha256_hex) - 1U);
         ev.u.config.json_utf8 = ctx->buf + h;
         ev.u.config.json_len  = json_len;
-        cb(user_ctx, &ev);
+        return config_emit_event(ctx, cb, user_ctx, &ev, true);
     }
 
     transfer_reset(ctx);
@@ -662,8 +760,7 @@ static esp_err_t handle_resp_error(iotmer_config_ctx_t *ctx, cJSON *root,
     cJSON *jer  = cJSON_GetObjectItemCaseSensitive(root, "error");
     if (!cJSON_IsString(jrid) || jrid->valuestring == NULL || !cJSON_IsBool(jok) ||
         !cJSON_IsObject(jer)) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp(err): missing fields");
-        transfer_reset(ctx);
+        emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(err): missing fields", true);
         return ESP_FAIL;
     }
     if (strcmp(jrid->valuestring, ctx->pending_rid) != 0) {
@@ -688,7 +785,7 @@ static esp_err_t handle_resp_error(iotmer_config_ctx_t *ctx, cJSON *root,
         strncpy(ev.u.resp_err.code, code, sizeof(ev.u.resp_err.code) - 1U);
         strncpy(ev.u.resp_err.message, msg, sizeof(ev.u.resp_err.message) - 1U);
         ev.u.resp_err.retryable = retryable;
-        cb(user_ctx, &ev);
+        return config_emit_event(ctx, cb, user_ctx, &ev, true);
     }
     transfer_reset(ctx);
     return ESP_OK;
@@ -703,8 +800,7 @@ static esp_err_t handle_resp(iotmer_config_ctx_t *ctx, const char *payload, int 
     }
     const size_t h = half_cap(ctx);
     if ((size_t)payload_len + 1U > ctx->cap - h) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp: payload too large for parse buffer");
-        transfer_reset(ctx);
+        emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp: payload too large for parse buffer", true);
         return ESP_ERR_NO_MEM;
     }
     memcpy(ctx->buf + h, payload, (size_t)payload_len);
@@ -712,8 +808,7 @@ static esp_err_t handle_resp(iotmer_config_ctx_t *ctx, const char *payload, int 
 
     cJSON *root = cJSON_Parse((char *)(ctx->buf + h));
     if (!root) {
-        emit_fail(cb, user_ctx, ctx->pending_rid, "resp: JSON parse failed");
-        transfer_reset(ctx);
+        emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp: JSON parse failed", true);
         return ESP_FAIL;
     }
 
@@ -731,9 +826,8 @@ static esp_err_t handle_resp(iotmer_config_ctx_t *ctx, const char *payload, int 
         return e;
     }
 
-    emit_fail(cb, user_ctx, ctx->pending_rid,
-              "resp: missing chunk_index (chunked data_b64 required)");
-    transfer_reset(ctx);
+    emit_fail(ctx, cb, user_ctx, ctx->pending_rid,
+              "resp: missing chunk_index (chunked data_b64 required)", true);
     cJSON_Delete(root);
     return ESP_FAIL;
 }
