@@ -1,27 +1,50 @@
-# `iotmer_ble` (optional ESP-IDF component)
+# iotmer_ble
 
-`iotmer_ble` adds a small **BLE GATT JSON channel** built on **ESP-IDF NimBLE**.
+Optional ESP-IDF component: NimBLE GATT JSON channel (RX write / TX notify).
 
-**ESP Component Registry:** [`iotmertech/iotmer_ble`](https://components.espressif.com/components/iotmertech/iotmer_ble) — link points at the component page (**Latest**); you do not need to edit docs when you publish a new version.
+Registry: [`iotmertech/iotmer_ble`](https://components.espressif.com/components/iotmertech/iotmer_ble)
 
-Add to `idf_component.yml`: `iotmertech/iotmer_ble: "*"` then `idf.py update-dependencies`.
+```yaml
+dependencies:
+  iotmertech/iotmer_ble: "*"
+```
 
-- **Purpose**: A general transport for UTF-8 JSON messages between a phone/PC and the device.
-- **Relation to provisioning**: Wi‑Fi provisioning is implemented *on top* of this channel via the JSON contract in `docs/sdk/esp-idf/ble-json-provisioning.md` (see `examples/05_ble_json`).
-
-## Public API
-
-- Header: `include/iotmer_ble.h`
-- Kconfig: `Kconfig.projbuild` (Component config → IOTMER BLE)
+Provisioning over BLE is built on top of this transport — see `examples/05_ble_json` and the [BLE JSON provisioning contract](../../docs/sdk/esp-idf/ble-json-provisioning.md).
 
 ## GATT layout
 
-- Service UUID: `IOTMER_BLE_UUID_SVC_STR`
-- RX characteristic: write JSON (`IOTMER_BLE_UUID_RX_STR`)
-- TX characteristic: notify/read JSON (`IOTMER_BLE_UUID_TX_STR`)
+| Characteristic | UUID constant | Direction |
+|----------------|---------------|-----------|
+| Service | `IOTMER_BLE_UUID_SVC_STR` | — |
+| RX | `IOTMER_BLE_UUID_RX_STR` | Central → device (write) |
+| TX | `IOTMER_BLE_UUID_TX_STR` | Device → central (notify) |
+
+## Configuration
+
+Header: `include/iotmer_ble.h` · Kconfig: **Component config → IOTMER BLE**
+
+| Field | Description |
+|-------|-------------|
+| `device_name` | GAP name. NULL → `{prefix}{mac_hex}` |
+| `on_rx_json` | Incoming JSON. Runs on NimBLE host thread by default. |
+| `on_connect` / `on_disconnect` / `on_subscribe` / `on_mtu` | Connection lifecycle |
+| `rx_queue_len` / `rx_task_stack` | Set `rx_queue_len > 0` to dispatch RX on a worker task (recommended) |
+
+## Suspend / resume
+
+On RAM-constrained chips (e.g. ESP32-C3), suspend BLE before a TLS handshake:
+
+```c
+iotmer_ble_suspend();   /* stop + deinit, release controller RAM */
+/* … MQTT or HTTPS TLS … */
+iotmer_ble_resume();    /* restore advertising */
+```
+
+Pair with `iotmer_config_t.on_tls_acquire` / `on_tls_release`.
 
 ## Notes
 
-- Advertising places **service UUID** in the advertising PDU and the **GAP name** in scan response to stay within common **31‑byte** advertising payload limits.
-- If `CONFIG_IOTMER_BLE_REQUIRE_ENC=y`, centrals must pair/encrypt before writing to RX.
-
+- Service UUID goes in the advertising PDU; GAP name in scan response (31-byte limit).
+- `CONFIG_IOTMER_BLE_REQUIRE_ENC=y` requires pairing before RX writes.
+- Max RX frame: `CONFIG_IOTMER_BLE_MAX_RX_LEN`. No multi-frame reassembly — keep JSON within one write or raise MTU.
+- If BLE never starts on some boot paths, call `esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT)` in `app_main()` to reclaim Classic BT RAM.

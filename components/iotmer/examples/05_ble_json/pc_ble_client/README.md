@@ -1,16 +1,10 @@
-# PC BLE client (Python + Bleak) — `iotmer_ble` JSON provisioning
+# PC BLE client
 
-Small desktop client that connects to the device’s **`iotmer_ble`** service and exchanges JSON:
+Python + Bleak desktop client for the `iotmer_ble` JSON channel.
 
-- Writes JSON requests to **RX**
-- Receives JSON responses via **TX notifications**
+Writes requests to **RX**, reads responses from **TX** notifications.
 
-## Requirements
-
-- Python 3.9+
-- BLE adapter (macOS / Linux / Windows)
-
-## Install
+## Setup
 
 ```bash
 python -m venv .venv
@@ -19,8 +13,6 @@ pip install -r requirements.txt
 ```
 
 ## Run
-
-From this directory:
 
 ```bash
 python client.py --scan
@@ -31,19 +23,18 @@ python client.py --name-prefix MER- --wifi-clear
 
 ## UUIDs
 
-- Service: `1d14d6ee-1001-4000-8024-b5a3c0ffee01`
-- RX (write): `1d14d6ee-1002-4000-8024-b5a3c0ffee01`
-- TX (notify/read): `1d14d6ee-1003-4000-8024-b5a3c0ffee01`
+| Characteristic | UUID |
+|----------------|------|
+| Service | `1d14d6ee-1001-4000-8024-b5a3c0ffee01` |
+| RX | `1d14d6ee-1002-4000-8024-b5a3c0ffee01` |
+| TX | `1d14d6ee-1003-4000-8024-b5a3c0ffee01` |
 
-If you change firmware UUIDs, macOS may cache GATT; remove the device from **System Settings → Bluetooth** once.
+## macOS: CBError 14
 
-### macOS: `Peer removed pairing information` (CBError 14)
+Stale BLE bond on Mac — not a firmware bug. After reflash or UUID change:
 
-Bu, script veya firmware hatası değil: **Mac’te kayıtlı eski BLE eşleşmesi** ile karttaki anahtarlar uyuşmuyor (full erase, yeni flash, `MER-` değişimi, NimBLE bond deposu sıfırlandıysa sık görülür).
+1. Remove `MER-…` from **System Settings → Bluetooth**
+2. Toggle Bluetooth off/on if needed
+3. Retry
 
-1. **Ayarlar → Bluetooth** içinde **`MER-…` cihazını kaldır** (“Forget device” / çöp kutusu).
-2. Gerekirse Mac’te Bluetooth’u **kapat–aç** veya yeniden başlat.
-3. Tekrar `python client.py --ping`.
-
-`CONFIG_IOTMER_BLE_REQUIRE_ENC=y` ise ilk bağlantıda eşleşme istenebilir; bond bozulduğunda da aynı 14 hatası gelir — yine cihazı listeden silmek genelde yeterlidir.
-
+With `IOTMER_BLE_REQUIRE_ENC=y`, pairing is required on first connect. A broken bond triggers the same error — forget the device and re-pair.

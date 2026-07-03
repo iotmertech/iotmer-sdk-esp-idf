@@ -1,90 +1,82 @@
-# ESP-IDF examples
+# Examples
 
-Reference applications for this repository’s `iotmer` component. **More examples will be added** under `examples/` as the SDK evolves; the table below lists what exists **today**. Create a workspace and credentials in the **[console](https://iotmer.com)** and follow **[documentation](https://docs.iotmer.com/)** when wiring devices to the cloud.
+Reference firmware for the `iotmer` component. Create a workspace in the [console](https://iotmer.com) before flashing.
 
-| Directory | Role |
-|-----------|------|
-| [`01_provisioning`](01_provisioning/) | Factory bring-up: HTTPS provision, NVS save, optional OTA. No MQTT client. |
-| [`02_telemetry`](02_telemetry/) | Field-style app: MQTT connect, subscribe, telemetry loop. |
-| [`03_lwt_presence`](03_lwt_presence/) | Retained presence + MQTT last-will ONLINE/OFFLINE. |
-| [`04_config`](04_config/) | MQTT Config Protocol: `config/meta` → `config/get` → `config/resp` (chunked `data_b64`, gzip or identity) → `config/status`. |
-| [`05_ble_json`](05_ble_json/) | NimBLE + `iotmer_ble`: general BLE JSON channel (demo includes `wifi.set` / `wifi.clear`). |
+| Example | Use case |
+|---------|----------|
+| [`01_provisioning`](01_provisioning/) | Factory: HTTPS provision, NVS, optional OTA |
+| [`02_telemetry`](02_telemetry/) | Field: MQTT connect, subscribe, telemetry loop |
+| [`03_lwt_presence`](03_lwt_presence/) | Retained JSON presence + MQTT LWT |
+| [`04_config`](04_config/) | MQTT Config Protocol |
+| [`05_ble_json`](05_ble_json/) | BLE JSON channel (`wifi.set`, `wifi.clear` demo) |
 
-## Prerequisites
-
-- ESP-IDF installed; shell must load the IDF environment (`export.sh` / `export.ps1`) so `idf.py` is on `PATH`.
-- For **01**, set **`IOTMER_PROVISION_AUTH_CODE`** and **`IOTMER_WORKSPACE_ID`** in menuconfig (and Wi‑Fi). **`workspace_slug`** for MQTT (`{workspace_slug}/{device_key}/…`) comes from the **provision API** response and is stored in NVS — **`IOTMER_WORKSPACE_SLUG`** in menuconfig is only an optional override (e.g. testing). For **02** after NVS is populated, the auth code may be left empty so HTTPS is skipped.
-
-## First build (clone)
-
-`build/`, `managed_components/`, and per-example `sdkconfig` are not committed (see repo `.gitignore`). After clone:
+## Build
 
 ```bash
-cd examples/01_provisioning   # or 02_telemetry / 04_config / 05_ble_json / …
-idf.py set-target esp32c3     # or esp32, esp32s3, …
-idf.py build
+cd examples/02_telemetry
+idf.py set-target esp32c3
+idf.py build flash monitor
 ```
 
-Component Manager restores dependencies from each example’s `dependencies.lock`.
+After clone, run `set-target` once — `build/`, `managed_components/`, and `sdkconfig` are not committed.
 
 ## Configure
 
-**menuconfig:** `idf.py menuconfig` → **Component config → IOTMER** (Wi‑Fi, provision auth, workspace id, optional **workspace slug** override, OTA options, …). Slug for topics normally comes from the **provision JSON**, not menuconfig.
+`idf.py menuconfig` → **Component config → IOTMER**
 
-**Or** edit `sdkconfig.defaults` (CI / templates). Do not commit production secrets in `sdkconfig` to a public repo.
+| Setting | When to set |
+|---------|-------------|
+| `IOTMER_PROVISION_AUTH_CODE` | Factory image (`01`). Leave empty in field firmware after first provision. |
+| `IOTMER_WORKSPACE_ID` | Required when auth code is set |
+| `IOTMER_WIFI_SSID` / `PASSWORD` | Always (or store via BLE / NVS) |
+| `IOTMER_WORKSPACE_SLUG` | Optional override. Normally comes from provision JSON → NVS. |
 
-Kconfig sources:
+Kconfig sources: `components/iotmer/Kconfig.projbuild`, `components/iotmer_ble/Kconfig.projbuild`
 
-- Core SDK: **`components/iotmer/Kconfig.projbuild`**
-- Optional BLE JSON channel: **`components/iotmer_ble/Kconfig.projbuild`** (only when that component directory is on `EXTRA_COMPONENT_DIRS`)
+Use `sdkconfig.defaults` for CI. Do not commit production secrets.
 
-## Flash & monitor
+## Boot flow
 
-```bash
-idf.py -p PORT flash monitor
-```
+`iotmer_init()` on each boot:
 
-Replace `PORT` with the host serial device (e.g. `/dev/ttyUSB0`, `COM5`). Exit monitor: `Ctrl+]`.
+1. Connect Wi‑Fi
+2. Load NVS credentials
+3. HTTPS provision (skipped when auth code is empty and NVS session is complete)
+4. Save credentials
+5. HTTPS OTA (when firmware metadata is present)
 
-## Provisioning & OTA (summary)
-
-On each boot, `iotmer_init()` loads NVS, optionally `POST`s to `{IOTMER_PROVISION_API_URL}/provision/device` when the auth code is set, saves credentials, then may run HTTPS OTA when firmware metadata is present. The provision JSON **typically includes** `device_http_token` (stored as NVS key **`dht`**) for device-auth HTTP (e.g. `iotmer_device_auth_bind_claim` in example **05**). If the auth code is empty and NVS holds a complete MQTT session, HTTPS is skipped (see [provisioning](../docs/sdk/esp-idf/provisioning.md) for `dht` if you use bind-claim on telemetry-only builds).
-
-MQTT topics follow the **console** ACL pattern `{workspace_slug}/{device_key}/…` — details in **[documentation](https://docs.iotmer.com/)**.
+MQTT topics: `{workspace_slug}/{device_key}/…` — see [docs.iotmer.com](https://docs.iotmer.com/).
 
 ## Troubleshooting
 
-| Symptom | Action |
-|---------|--------|
-| `idf.py: command not found` | Source ESP-IDF `export` script in the shell. |
-| Linux serial permission denied | Add user to `dialout`, re-login. |
-| Wrong chip | `idf.py set-target <chip>` in the example directory. |
-| TLS / `s_dummy_crt` / verify errors | Ensure `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE` options match the example `sdkconfig.defaults`; `fullclean` + rebuild. |
-| `esp-x509-crt-bundle: No matching trusted root` | Enable cross-signed bundle verify (`CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y`) as in defaults. |
-| Task watchdog during TLS | Increase `CONFIG_ESP_TASK_WDT_TIMEOUT_S` and/or main stack (`CONFIG_ESP_MAIN_TASK_STACK_SIZE`) per example defaults. |
-| MQTT `not authorized` | NVS MQTT password out of date vs console; re-run provision with auth code or rotate credentials and provision again. |
-| BLE build: missing `host/ble_gap.h` / `bt` not in requirements | Ensure your app `CMakeLists.txt` declares `REQUIRES bt` via `iotmer_ble` and run **`idf.py fullclean`** after Kconfig / component path changes. |
-| BLE client (macOS): characteristic UUID “not found” | OS may display UUID strings in a non-RFC order; compare 128-bit values. Remove the peripheral from macOS Bluetooth settings after firmware UUID changes. |
+| Symptom | Fix |
+|---------|-----|
+| `idf.py: command not found` | Source ESP-IDF `export.sh` |
+| Serial permission denied (Linux) | Add user to `dialout`, re-login |
+| Wrong chip | `idf.py set-target <chip>` |
+| TLS verify errors | Match example `sdkconfig.defaults`; `idf.py fullclean build` |
+| MQTT `not authorized` | Re-provision with auth code or rotate console credentials |
+| Task WDT during TLS | Increase `CONFIG_ESP_TASK_WDT_TIMEOUT_S` and main stack per example defaults |
+| BLE: missing `ble_gap.h` | `REQUIRES iotmer_ble` in app CMakeLists; `idf.py fullclean` |
+| BLE (macOS): UUID not found | Compare 128-bit values; remove peripheral from Bluetooth settings |
 
-## SDK layout (reference)
+## Component layout
 
 ```
 components/iotmer/
-├── include/iotmer_client.h   ← public API
-├── include/iotmer_config.h   ← config protocol API
-├── iotmer_client.c           ← init / connect / MQTT
-├── iotmer_provision.c        ← HTTPS provision
-├── iotmer_nvs.c              ← credentials NVS
-├── iotmer_ota.c              ← HTTPS OTA (Kconfig)
-├── iotmer_telemetry.c        ← publish helpers
-├── iotmer_config.c           ← MQTT Config Protocol (device)
-├── iotmer_topics.c           ← topic strings
-└── iotmer_wifi.c             ← STA connect
+├── include/iotmer_client.h   # public API
+├── include/iotmer_config.h   # config protocol API
+├── iotmer_client.c           # init, connect, MQTT
+├── iotmer_provision.c        # HTTPS provision
+├── iotmer_nvs.c              # credentials
+├── iotmer_ota.c              # HTTPS OTA
+├── iotmer_wifi.c             # Wi‑Fi STA
+└── …
 
 components/iotmer_ble/
-└── include/iotmer_ble.h   ← optional BLE JSON channel (transport)
+└── include/iotmer_ble.h      # optional BLE JSON transport
 ```
 
-`iotmer_internal.h` is for component sources only, not for application include paths.
+`iotmer_internal.h` is component-private — do not include from application code.
 
-Design notes: stack-built topics; manual MQTT reconnect timer; subscriptions reissued on each `MQTT_EVENT_CONNECTED`; no `nvs_flash_init()` inside the component (application must call it once).
+Application must call `nvs_flash_init()` once before `iotmer_init()`.

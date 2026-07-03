@@ -43,6 +43,9 @@ bool iotmer_topics_match_cmd(const char *topic, const char *workspace_slug,
 bool iotmer_topics_match_config(const char *topic, const char *workspace_slug,
                                 const char *device_key);
 
+/** Standard MQTT topic-filter match supporting `+` (single level) and `#` (multi level). */
+bool iotmer_topic_filter_matches(const char *filter, const char *topic);
+
 /**
  * Enqueue an MQTT publish for delivery by the mqtt client task.
  * Safe from any task, including the MQTT event handler.
@@ -52,6 +55,12 @@ esp_err_t iotmer_mqtt_publish(iotmer_client_t *client,
                               const char *payload,
                               int qos,
                               int retain);
+
+/**
+ * Build the JSON presence payload: {"status":"<status-lowercased>","ts":<unix s|0>}.
+ * ts is 0 when the device clock has not been synced (pre-SNTP).
+ */
+esp_err_t iotmer_presence_build_payload(char *out, size_t out_len, const char *status);
 
 #ifdef __cplusplus
 }

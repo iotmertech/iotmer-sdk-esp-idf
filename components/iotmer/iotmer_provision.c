@@ -264,6 +264,9 @@ esp_err_t iotmer_provision(iotmer_creds_t *out, bool *https_performed)
     if (backup.device_id[0] != '\0') {
         (void)cJSON_AddStringToObject(root, "device_id", backup.device_id);
     }
+    if (backup.device_key[0] != '\0') {
+        (void)cJSON_AddStringToObject(root, "device_key", backup.device_key);
+    }
     char *body = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (!body) {

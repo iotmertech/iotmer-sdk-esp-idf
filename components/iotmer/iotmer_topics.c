@@ -5,7 +5,7 @@
  *
  *   {workspace_slug}/{device_key}/telemetry   publish
  *   {workspace_slug}/{device_key}/state       publish
- *   {workspace_slug}/{device_key}/presence    publish (retained, ONLINE/OFFLINE)
+ *   {workspace_slug}/{device_key}/presence    publish (retained JSON {"status":...,"ts":...})
  *   {workspace_slug}/{device_key}/cmd         subscribe
  *   {workspace_slug}/{device_key}/config/#    subscribe
  *
@@ -107,4 +107,33 @@ bool iotmer_topics_match_config(const char *topic, const char *workspace_slug,
         return false;
     }
     return strncmp(topic, p, (size_t)n) == 0;
+}
+
+bool iotmer_topic_filter_matches(const char *filter, const char *topic)
+{
+    if (!filter || !topic) {
+        return false;
+    }
+
+    while (*filter != '\0') {
+        if (*filter == '#') {
+            /* Multi-level wildcard: matches the remainder (incl. zero levels). */
+            return true;
+        }
+        if (*filter == '+') {
+            /* Single-level wildcard: consume '+' and one topic level. */
+            ++filter;
+            while (*topic != '\0' && *topic != '/') {
+                ++topic;
+            }
+            continue;
+        }
+        if (*filter != *topic) {
+            return false;
+        }
+        ++filter;
+        ++topic;
+    }
+
+    return *topic == '\0';
 }

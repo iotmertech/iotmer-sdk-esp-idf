@@ -30,20 +30,55 @@ typedef struct iotmer_ble_cfg {
     void *user_ctx;
 
     /**
-     * Optional; invoked from the NimBLE host context.
-     * Keep it fast: parse, validate, then hand off to another task if needed.
+     * Optional advertised device name. When NULL or empty, the SDK builds a
+     * MAC-derived name (CONFIG_IOTMER_BLE_GAP_NAME_PREFIX + hex suffix).
+     * The string is copied internally at init; it need not outlive the call.
+     */
+    const char *device_name;
+
+    /**
+     * Optional; invoked with a complete received JSON frame.
+     *
+     * By default this runs in the NimBLE host context — keep it fast: parse, validate,
+     * then hand off to another task if needed. If `rx_queue_len` > 0, the SDK instead
+     * dispatches this callback from a dedicated worker task, so heavier work is safe.
      *
      * @param user_ctx User context from this config.
      * @param data JSON bytes (not NUL-terminated).
      * @param len Length in bytes.
      */
     void (*on_rx_json)(void *user_ctx, const uint8_t *data, size_t len);
+
+    /** Optional: a BLE central connected. */
+    void (*on_connect)(void *user_ctx);
+    /** Optional: the central disconnected. @p reason is the NimBLE HCI reason code. */
+    void (*on_disconnect)(void *user_ctx, int reason);
+    /** Optional: central toggled notifications on the TX characteristic (CCCD). */
+    void (*on_subscribe)(void *user_ctx, bool notify_enabled);
+    /** Optional: ATT MTU negotiated / updated for the active connection. */
+    void (*on_mtu)(void *user_ctx, uint16_t mtu);
+
+    /**
+     * Optional queued RX dispatch (B2). When > 0, the SDK creates a FreeRTOS queue of
+     * this depth plus a worker task; `on_rx_json` is invoked from that task instead of
+     * the NimBLE host context. 0 keeps the direct (host-context) callback.
+     */
+    uint16_t rx_queue_len;
+    /** Worker task stack (bytes) when `rx_queue_len` > 0. 0 => a sensible default (4096). */
+    uint16_t rx_task_stack;
 } iotmer_ble_cfg_t;
 
-#define IOTMER_BLE_CFG_DEFAULT() \
-    (iotmer_ble_cfg_t) {         \
-        .user_ctx    = NULL,     \
-        .on_rx_json  = NULL,     \
+#define IOTMER_BLE_CFG_DEFAULT()  \
+    (iotmer_ble_cfg_t) {          \
+        .user_ctx      = NULL,    \
+        .device_name   = NULL,    \
+        .on_rx_json    = NULL,    \
+        .on_connect    = NULL,    \
+        .on_disconnect = NULL,    \
+        .on_subscribe  = NULL,    \
+        .on_mtu        = NULL,    \
+        .rx_queue_len  = 0,       \
+        .rx_task_stack = 0,       \
     }
 
 /**
@@ -61,6 +96,22 @@ esp_err_t iotmer_ble_stop(void);
 
 /** Deinitialise NimBLE host. Call `iotmer_ble_stop()` first. */
 void iotmer_ble_deinit(void);
+
+/**
+ * Suspend the BLE radio to reclaim controller RAM (e.g. so a TLS handshake can allocate
+ * its contiguous internal buffer). Internally: stop + deinit, remembering the stored
+ * config and whether advertising was active. Safe to call when already suspended.
+ */
+esp_err_t iotmer_ble_suspend(void);
+
+/**
+ * Resume after iotmer_ble_suspend(): re-init with the stored config and restart
+ * advertising if it was active before suspension. Safe to call when not suspended.
+ */
+esp_err_t iotmer_ble_resume(void);
+
+/** True while the radio is suspended (between suspend and resume). */
+bool iotmer_ble_is_suspended(void);
 
 /**
  * Send a JSON payload to the connected central via TX notify (and updates the readable TX value).

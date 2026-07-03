@@ -1,18 +1,15 @@
-## Examples
+# Examples (Component Registry)
 
-This component ships **ESP-IDF example projects** under this folder so the ESP Component Registry can index them in the **Examples** tab.
+ESP-IDF examples bundled with this component for the [ESP Component Registry Examples tab](https://components.espressif.com/components/iotmertech/iotmer).
 
-Each example is a standalone ESP-IDF project (mirrored here for the **ESP Component Registry → Examples** tab):
+| Example | Purpose |
+|---------|---------|
+| `01_provisioning/` | Factory HTTPS provision + OTA |
+| `02_telemetry/` | Field MQTT telemetry |
+| `03_lwt_presence/` | JSON presence + LWT |
+| `04_config/` | MQTT Config Protocol |
+| `05_ble_json/` | BLE JSON demo (`iotmer_ble`) |
 
-- `01_provisioning/`
-- `02_telemetry/`
-- `03_lwt_presence/`
-- `04_config/` — MQTT Config Protocol (`config/meta`, `config/get`, chunked `config/resp`, `config/status`)
-- `05_ble_json/` — BLE JSON channel + provisioning demo (uses `iotmer_ble`)
+Keep `components/iotmer/examples/*` in sync with `examples/*` in the monorepo.
 
-When changing examples, keep **`components/iotmer/examples/*`** in sync with the **monorepo** copies under **`examples/*`** (same `main/`, `sdkconfig.defaults`, and Kconfig) — see each pair’s `README` for the dev path with **local** `components/`.
-
-The canonical source for all examples:
-
-- `https://github.com/iotmertech/iotmer-sdk-esp-idf/tree/main/examples`
-
+Canonical source: [github.com/iotmertech/iotmer-sdk-esp-idf/tree/main/examples](https://github.com/iotmertech/iotmer-sdk-esp-idf/tree/main/examples)

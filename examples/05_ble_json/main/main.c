@@ -237,6 +237,24 @@ static void on_rx_json(void *user_ctx, const uint8_t *data, size_t len)
     send_error_rid(rid_s, "unknown_type", "Unknown command");
 }
 
+static void on_ble_connect(void *user_ctx)
+{
+    (void)user_ctx;
+    ESP_LOGI(TAG, "BLE central connected");
+}
+
+static void on_ble_disconnect(void *user_ctx, int reason)
+{
+    (void)user_ctx;
+    ESP_LOGI(TAG, "BLE central disconnected (reason=%d)", reason);
+}
+
+static void on_ble_mtu(void *user_ctx, uint16_t mtu)
+{
+    (void)user_ctx;
+    ESP_LOGI(TAG, "BLE ATT MTU=%u", (unsigned)mtu);
+}
+
 void app_main(void)
 {
     ESP_ERROR_CHECK(nvs_flash_init());
@@ -244,7 +262,14 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     iotmer_ble_cfg_t cfg = IOTMER_BLE_CFG_DEFAULT();
-    cfg.on_rx_json = on_rx_json;
+    cfg.device_name   = "MER-Setup";      /* optional; NULL => MAC-derived name */
+    cfg.on_rx_json    = on_rx_json;
+    cfg.on_connect    = on_ble_connect;
+    cfg.on_disconnect = on_ble_disconnect;
+    cfg.on_mtu        = on_ble_mtu;
+    /* Dispatch RX on a worker task so the parse/claim work is off the NimBLE host context. */
+    cfg.rx_queue_len  = 4;
+    cfg.rx_task_stack = 6144;
 
     ESP_ERROR_CHECK(iotmer_ble_init(&cfg));
     ESP_ERROR_CHECK(iotmer_ble_start());

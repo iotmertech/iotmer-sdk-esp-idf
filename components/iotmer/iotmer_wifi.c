@@ -5,8 +5,12 @@
  * successful connection is a no-op (returns ESP_OK immediately).
  *
  * Internally it uses an event group to block until an IP is acquired or
- * the connection attempt fails.  The retry limit (WIFI_MAX_RETRY) caps the
- * number of reconnect attempts before giving up and returning ESP_FAIL.
+ * the connection attempt fails. The fast-retry limit (WIFI_FAST_RETRY_MAX)
+ * only bounds how long the *blocking* call waits before returning ESP_FAIL:
+ * the link itself is never abandoned. Once fast retries are exhausted, a
+ * one-shot esp_timer keeps calling esp_wifi_connect() with an increasing
+ * backoff (WIFI_BACKOFF_MIN_MS … WIFI_BACKOFF_MAX_MS) until an IP is
+ * re-acquired, so a router that comes back hours later is still picked up.
  *
  * Note: nvs_flash_init() and esp_event_loop_create_default() are the
  * application's responsibility; this module calls them defensively and
@@ -22,6 +26,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "nvs.h"
 #include "sdkconfig.h"
@@ -33,17 +38,56 @@
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
-#define WIFI_MAX_RETRY     10
+#define WIFI_FAST_RETRY_MAX 10
 #define WIFI_CONNECT_TIMEOUT_MS 30000
+
+/* Persistent reconnect backoff once fast retries are exhausted. */
+#define WIFI_BACKOFF_MIN_MS 15000
+#define WIFI_BACKOFF_MAX_MS 60000
 
 /* Keep keys ≤15 chars (ESP-IDF NVS limit). */
 #define IOTMER_WIFI_NVS_KEY_SSID "wifi_ssid"
 #define IOTMER_WIFI_NVS_KEY_PASS "wifi_pass"
 
-static EventGroupHandle_t s_event_group;
-static int                s_retry_num;
-static bool               s_inited;
-static bool               s_connected;
+static EventGroupHandle_t  s_event_group;
+static int                 s_retry_num;
+static bool                s_inited;
+static bool                s_started;   /* esp_wifi_start() done (STA_START seen) */
+static bool                s_connected; /* IP acquired; cleared on STA_DISCONNECTED */
+static esp_timer_handle_t  s_backoff_timer;
+static uint32_t            s_backoff_ms;
+
+static void wifi_backoff_timer_cb(void *arg)
+{
+    (void)arg;
+    ESP_LOGI(TAG, "WiFi backoff retry — attempting reconnect");
+    (void)esp_wifi_connect();
+}
+
+/*
+ * Never give up on the link: arm a one-shot timer that pokes esp_wifi_connect()
+ * again. The delay doubles from WIFI_BACKOFF_MIN_MS up to WIFI_BACKOFF_MAX_MS
+ * so a long outage does not hammer the radio, and is reset on GOT_IP.
+ */
+static void schedule_backoff_reconnect(void)
+{
+    if (!s_backoff_timer) {
+        return;
+    }
+    if (s_backoff_ms == 0U) {
+        s_backoff_ms = WIFI_BACKOFF_MIN_MS;
+    } else if (s_backoff_ms < WIFI_BACKOFF_MAX_MS) {
+        s_backoff_ms *= 2U;
+        if (s_backoff_ms > WIFI_BACKOFF_MAX_MS) {
+            s_backoff_ms = WIFI_BACKOFF_MAX_MS;
+        }
+    }
+    (void)esp_timer_stop(s_backoff_timer);
+    if (esp_timer_start_once(s_backoff_timer, (uint64_t)s_backoff_ms * 1000ULL) == ESP_OK) {
+        ESP_LOGW(TAG, "WiFi still down — next reconnect attempt in %u ms",
+                 (unsigned)s_backoff_ms);
+    }
+}
 
 static esp_err_t nvs_get_str_safe(nvs_handle_t h, const char *key, char *out, size_t out_len)
 {
@@ -190,8 +234,9 @@ esp_err_t iotmer_wifi_reconnect(void)
         /* ignore */
     }
     err = esp_wifi_stop();
-    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STARTED) {
-        /* ignore */
+    if (err == ESP_OK || err == ESP_ERR_WIFI_NOT_STARTED) {
+        /* Don't wait for the async STA_STOP event; the stop already happened. */
+        s_started = false;
     }
 
     return iotmer_wifi_connect();
@@ -204,24 +249,41 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     (void)event_data;
 
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        s_started = true;
         (void)esp_wifi_connect();
+
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_STOP) {
+        s_started = false;
+        s_connected = false;
+        if (s_backoff_timer) {
+            (void)esp_timer_stop(s_backoff_timer);
+        }
 
     } else if (event_base == WIFI_EVENT &&
                event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (s_retry_num < WIFI_MAX_RETRY) {
+        s_connected = false;
+        if (s_retry_num < WIFI_FAST_RETRY_MAX) {
             s_retry_num++;
             ESP_LOGW(TAG, "WiFi disconnected, retry %d/%d",
-                     s_retry_num, WIFI_MAX_RETRY);
+                     s_retry_num, WIFI_FAST_RETRY_MAX);
             (void)esp_wifi_connect();
         } else {
-            ESP_LOGE(TAG, "WiFi connect failed after %d retries", WIFI_MAX_RETRY);
+            /* Unblock any pending iotmer_wifi_connect() caller, but do NOT give
+             * up on the link: keep retrying forever with backoff. */
+            ESP_LOGE(TAG, "WiFi connect failed after %d fast retries — switching to backoff",
+                     WIFI_FAST_RETRY_MAX);
             xEventGroupSetBits(s_event_group, WIFI_FAIL_BIT);
+            schedule_backoff_reconnect();
         }
 
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "WiFi connected, IP: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
+        s_backoff_ms = 0;
+        if (s_backoff_timer) {
+            (void)esp_timer_stop(s_backoff_timer);
+        }
         s_connected = true;
         xEventGroupSetBits(s_event_group, WIFI_CONNECTED_BIT);
     }
@@ -235,6 +297,19 @@ static esp_err_t wifi_init_once(void)
     if (!s_event_group) {
         ESP_LOGE(TAG, "EventGroup alloc failed");
         return ESP_ERR_NO_MEM;
+    }
+
+    const esp_timer_create_args_t backoff_args = {
+        .callback              = &wifi_backoff_timer_cb,
+        .dispatch_method       = ESP_TIMER_TASK,
+        .name                  = "iotmer_wifi_bo",
+        .skip_unhandled_events = true,
+    };
+    esp_err_t terr = esp_timer_create(&backoff_args, &s_backoff_timer);
+    if (terr != ESP_OK) {
+        /* Non-fatal: without the timer we lose only the persistent backoff. */
+        ESP_LOGW(TAG, "backoff timer create failed: %s", esp_err_to_name(terr));
+        s_backoff_timer = NULL;
     }
 
     /* esp_netif_init and esp_event_loop_create_default are tolerant of being
@@ -310,11 +385,30 @@ esp_err_t iotmer_wifi_connect(void)
     /* Clear stale bits before starting (handles repeated calls after failure). */
     xEventGroupClearBits(s_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
     s_retry_num = 0;
+    s_backoff_ms = 0;
+    if (s_backoff_timer) {
+        (void)esp_timer_stop(s_backoff_timer);
+    }
+
+    const bool was_started = s_started;
 
     err = esp_wifi_start();
     if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
         ESP_LOGE(TAG, "esp_wifi_start failed: %s", esp_err_to_name(err));
         return err;
+    }
+
+    /*
+     * If WiFi was already started, esp_wifi_start() emits no STA_START event and
+     * the STA_START → esp_wifi_connect() chain never fires. Kick the connection
+     * directly so the call below doesn't just sit out the 30 s timeout.
+     */
+    if (was_started) {
+        err = esp_wifi_connect();
+        if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
+            ESP_LOGW(TAG, "esp_wifi_connect (already-started path): %s",
+                     esp_err_to_name(err));
+        }
     }
 
     ESP_LOGI(TAG, "Connecting to SSID: %s ...", ssid);

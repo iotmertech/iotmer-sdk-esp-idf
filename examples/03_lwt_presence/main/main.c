@@ -33,10 +33,10 @@ void app_main(void)
 
     /*
      * Presence flow:
-     * - MQTT_EVENT_CONNECTED publishes retained "ONLINE" to:
+     * - MQTT_EVENT_CONNECTED publishes retained {"status":"online","ts":...} to:
      *     {workspace_slug}/{device_key}/presence
      * - If power/network drops without a clean MQTT disconnect,
-     *   broker publishes retained LWT "OFFLINE" to the same topic.
+     *   broker publishes retained LWT {"status":"offline","ts":0} to the same topic.
      */
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));

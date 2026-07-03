@@ -119,6 +119,38 @@ config IOTMER_FIRMWARE_POLL_TASK_PRIORITY
     help
         Keep this modest so WiFi / IDLE get CPU during long TLS (provision/OTA) on single-core chips.
 
+config IOTMER_MQTT_RX_ASSEMBLY_MAX
+    int "Max reassembled inbound MQTT message size (bytes, 0=drop oversized)"
+    default 8192
+    help
+        esp-mqtt delivers messages larger than CONFIG_MQTT_BUFFER_SIZE as multiple
+        MQTT_EVENT_DATA fragments. The SDK reassembles them (bounded by this value)
+        so subscription callbacks always receive a complete payload — never broken
+        JSON. Messages above this limit are dropped with a warning. Set 0 to disable
+        reassembly entirely (oversized messages are then dropped, not dispatched
+        half-parsed). The buffer is heap-allocated only while a fragmented message
+        is in flight.
+
+config IOTMER_MQTT_OUTBOX_LIMIT
+    int "MQTT outbox size limit (bytes, 0=unbounded)"
+    default 16384
+    help
+        QoS1/QoS2 publishes are queued in the esp-mqtt outbox while the connection
+        is down. Without a cap, a long offline period can exhaust the heap on
+        low-RAM devices. When the limit is reached, the oldest queued messages are
+        deleted by esp-mqtt. 0 keeps the esp-mqtt default (unbounded).
+
+config IOTMER_TLS_MIN_HEAP_GUARD
+    int "TLS min contiguous internal heap guard (bytes, 0=disabled)"
+    default 0
+    help
+        When > 0, iotmer_connect()/iotmer_reconnect_hard() check the largest free internal
+        (contiguous) heap block before a TLS MQTT handshake. If it is below this threshold,
+        the SDK invokes the optional iotmer_config_t.on_tls_acquire hook (e.g. to suspend BLE),
+        waits briefly, and re-checks; if still insufficient it aborts with ESP_ERR_NO_MEM and a
+        clear log instead of an opaque mbedTLS -0x3000 (SSL_ALLOC_FAILED). A typical value on
+        ESP32-C3 with BLE + WiFi coexistence is around 20000. Leave 0 to disable the guard.
+
 config IOTMER_CONFIG_DEFER_CALLBACKS
     bool "Defer config user callbacks to a worker task"
     default y
