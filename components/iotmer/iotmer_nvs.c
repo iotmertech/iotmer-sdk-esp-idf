@@ -27,6 +27,20 @@ static const char *ns(void)
     return CONFIG_IOTMER_NVS_NAMESPACE;
 }
 
+/*
+ * Write when non-empty, erase when empty: fields the backend stopped returning
+ * (e.g. firmware_url) must not survive in NVS and resurface as stale metadata
+ * on the next boot.
+ */
+static esp_err_t nvs_set_or_erase_str(nvs_handle_t h, const char *key, const char *val)
+{
+    if (val && val[0] != '\0') {
+        return nvs_set_str(h, key, val);
+    }
+    esp_err_t err = nvs_erase_key(h, key);
+    return (err == ESP_ERR_NVS_NOT_FOUND) ? ESP_OK : err;
+}
+
 static esp_err_t nvs_get_str_safe(nvs_handle_t h, const char *key, char *out, size_t out_len)
 {
     if (!key || !out || out_len == 0) {
@@ -120,18 +134,21 @@ esp_err_t iotmer_nvs_save_creds(const iotmer_creds_t *creds)
     if (err != ESP_OK) goto out;
     err = nvs_set_str(h, "device_key", creds->device_key);
     if (err != ESP_OK) goto out;
-    if (creds->firmware_checksum_sha256[0] != '\0') {
-        err = nvs_set_str(h, "fw_sha256", creds->firmware_checksum_sha256);
-        if (err != ESP_OK) goto out;
-    }
+    err = nvs_set_or_erase_str(h, "fw_sha256", creds->firmware_checksum_sha256);
+    if (err != ESP_OK) goto out;
     if (creds->firmware_size_bytes != 0) {
         err = nvs_set_u32(h, "fw_size", creds->firmware_size_bytes);
-        if (err != ESP_OK) goto out;
+    } else {
+        err = nvs_erase_key(h, "fw_size");
+        if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
     }
-    if (creds->firmware_url[0] != '\0') {
-        err = nvs_set_str(h, "fw_url", creds->firmware_url);
-        if (err != ESP_OK) goto out;
-    }
+    if (err != ESP_OK) goto out;
+    err = nvs_set_or_erase_str(h, "fw_url", creds->firmware_url);
+    if (err != ESP_OK) goto out;
+    /*
+     * Applied SHA is only ever written by the SDK after a successful OTA; keep the
+     * last known value when the in-memory copy is empty (fresh struct, no OTA yet).
+     */
     if (creds->firmware_applied_sha256[0] != '\0') {
         err = nvs_set_str(h, NVS_KEY_OTA_APPLIED_SHA, creds->firmware_applied_sha256);
         if (err != ESP_OK) {
@@ -149,14 +166,10 @@ esp_err_t iotmer_nvs_save_creds(const iotmer_creds_t *creds)
     if (err != ESP_OK) goto out;
     err = nvs_set_str(h, "mqtt_password", creds->mqtt_password);
     if (err != ESP_OK) goto out;
-    if (creds->workspace_slug[0] != '\0') {
-        err = nvs_set_str(h, "workspace_slug", creds->workspace_slug);
-        if (err != ESP_OK) goto out;
-    }
-    if (creds->device_http_token[0] != '\0') {
-        err = nvs_set_str(h, "dht", creds->device_http_token);
-        if (err != ESP_OK) goto out;
-    }
+    err = nvs_set_or_erase_str(h, "workspace_slug", creds->workspace_slug);
+    if (err != ESP_OK) goto out;
+    err = nvs_set_or_erase_str(h, "dht", creds->device_http_token);
+    if (err != ESP_OK) goto out;
 
     err = nvs_commit(h);
 

@@ -11,6 +11,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_timer.h"
 #include "sdkconfig.h"
 
 #include "freertos/FreeRTOS.h"
@@ -26,6 +27,11 @@
 #include "iotmer_internal.h"
 
 #define TAG "iotmer_config"
+
+/* Fallback for stale build trees that haven't regenerated sdkconfig.h. */
+#ifndef CONFIG_IOTMER_CONFIG_TRANSFER_TIMEOUT_MS
+#define CONFIG_IOTMER_CONFIG_TRANSFER_TIMEOUT_MS 30000
+#endif
 
 static void transfer_reset(iotmer_config_ctx_t *ctx);
 static esp_err_t config_emit_event(iotmer_config_ctx_t *ctx,
@@ -209,26 +215,29 @@ static esp_err_t gunzip_to_upper(iotmer_config_ctx_t *ctx, size_t gzip_len, size
     return ESP_OK;
 }
 
-static esp_err_t b64_decode_append(iotmer_config_ctx_t *ctx, const char *b64, size_t b64_len)
+/*
+ * Decode one base64 chunk directly to its offset (chunk_index * chunk_bytes) in the
+ * lower buffer half. Placement by index — not arrival order — keeps QoS1
+ * re-deliveries and out-of-order chunks from corrupting the stream.
+ */
+static esp_err_t b64_decode_at(iotmer_config_ctx_t *ctx, size_t offset,
+                               const char *b64, size_t b64_len, size_t *olen_out)
 {
-    if (!ctx || !b64 || b64_len == 0U) {
+    if (!ctx || !b64 || b64_len == 0U || !olen_out) {
         return ESP_ERR_INVALID_ARG;
     }
     const size_t h = half_cap(ctx);
-    if (ctx->gzip_len >= h) {
+    if (offset >= h) {
         return ESP_ERR_NO_MEM;
     }
     size_t olen = 0;
-    int br = mbedtls_base64_decode(ctx->buf + ctx->gzip_len, h - ctx->gzip_len, &olen,
+    int br = mbedtls_base64_decode(ctx->buf + offset, h - offset, &olen,
                                    (const unsigned char *)b64, b64_len);
     if (br != 0) {
         ESP_LOGW(TAG, "base64 decode failed rc=%d", br);
         return ESP_FAIL;
     }
-    ctx->gzip_len += olen;
-    if (ctx->gzip_len > h) {
-        return ESP_ERR_NO_MEM;
-    }
+    *olen_out = olen;
     return ESP_OK;
 }
 
@@ -275,9 +284,26 @@ static void transfer_reset(iotmer_config_ctx_t *ctx)
     ctx->chunk_meta_init    = false;
     ctx->resp_chunk_is_gzip = false;
     ctx->total_chunks       = 0;
+    ctx->chunk_bytes        = 0;
     ctx->gzip_len           = 0;
+    ctx->transfer_start_us  = 0;
     ctx->pending_rid[0]     = '\0';
     memset(ctx->chunk_bmap, 0, sizeof(ctx->chunk_bmap));
+}
+
+void iotmer_config_abort(iotmer_config_ctx_t *ctx)
+{
+    transfer_reset(ctx);
+}
+
+/* Stale transfer: the cloud never completed the response within the window. */
+static bool transfer_timed_out(const iotmer_config_ctx_t *ctx)
+{
+    if (!ctx->transfer_active || ctx->transfer_start_us == 0) {
+        return false;
+    }
+    return (esp_timer_get_time() - ctx->transfer_start_us) >
+           (int64_t)CONFIG_IOTMER_CONFIG_TRANSFER_TIMEOUT_MS * 1000LL;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -302,11 +328,20 @@ static void config_event_task(void *arg)
     (void)arg;
     config_event_job_t job;
     while (xQueueReceive(s_config_event_queue, &job, portMAX_DELAY) == pdTRUE) {
+        /*
+         * Reset *before* the callback: it only clears flags (buffer contents stay
+         * valid for the event payload) and lets the app issue a fresh
+         * iotmer_config_request() from inside the callback.
+         */
+        if (job.reset_transfer && job.ctx) {
+            transfer_reset(job.ctx);
+        }
         if (job.cb) {
             job.cb(job.user_ctx, &job.ev);
         }
-        if (job.reset_transfer && job.ctx) {
-            transfer_reset(job.ctx);
+        if (job.ctx && job.ev.type == IOTMER_CONFIG_EV_CONFIG_JSON) {
+            /* Buffer no longer referenced; MQTT side may write into it again. */
+            job.ctx->cb_busy = false;
         }
     }
 }
@@ -362,8 +397,19 @@ static esp_err_t config_emit_event(iotmer_config_ctx_t *ctx,
         .ev              = *ev,
         .reset_transfer  = reset_transfer,
     };
+    /*
+     * EV_CONFIG_JSON carries a pointer into ctx->buf: mark the buffer as owned by
+     * the worker until the callback returns, so inbound config/meta / config/resp
+     * cannot overwrite the JSON mid-read (they are dropped in iotmer_config_on_mqtt).
+     */
+    if (ctx && ev->type == IOTMER_CONFIG_EV_CONFIG_JSON) {
+        ctx->cb_busy = true;
+    }
     if (xQueueSend(s_config_event_queue, &job, 0) != pdTRUE) {
         ESP_LOGE(TAG, "config event queue full");
+        if (ctx && ev->type == IOTMER_CONFIG_EV_CONFIG_JSON) {
+            ctx->cb_busy = false;
+        }
         if (reset_transfer && ctx) {
             transfer_reset(ctx);
         }
@@ -444,7 +490,12 @@ esp_err_t iotmer_config_request(iotmer_config_ctx_t *ctx, iotmer_client_t *clien
         return ESP_ERR_INVALID_STATE;
     }
     if (ctx->transfer_active) {
-        return ESP_ERR_INVALID_STATE;
+        if (!transfer_timed_out(ctx)) {
+            return ESP_ERR_INVALID_STATE;
+        }
+        /* Previous transfer never completed — recover instead of blocking forever. */
+        ESP_LOGW(TAG, "previous config transfer timed out — resetting");
+        transfer_reset(ctx);
     }
 
     char rid[IOTMER_CONFIG_RID_LEN];
@@ -490,23 +541,30 @@ esp_err_t iotmer_config_request(iotmer_config_ctx_t *ctx, iotmer_client_t *clien
         return ESP_ERR_NO_MEM;
     }
 
-    esp_err_t err = publish_suffix_json(client, "config/get", printed);
-    cJSON_free(printed);
-
-    if (err != ESP_OK) {
-        return err;
-    }
-
+    /*
+     * Arm the transfer state *before* publishing: a very fast response otherwise
+     * races the flags and would be dropped. Rolled back on publish failure.
+     */
     strncpy(ctx->pending_rid, rid, sizeof(ctx->pending_rid) - 1U);
     ctx->pending_rid[sizeof(ctx->pending_rid) - 1U] = '\0';
-    strncpy(rid_out, rid, IOTMER_CONFIG_RID_LEN - 1U);
-    rid_out[IOTMER_CONFIG_RID_LEN - 1U] = '\0';
-
     ctx->transfer_active    = true;
     ctx->chunk_meta_init    = false;
     ctx->gzip_len           = 0;
     ctx->total_chunks       = 0;
+    ctx->chunk_bytes        = 0;
+    ctx->transfer_start_us  = esp_timer_get_time();
     memset(ctx->chunk_bmap, 0, sizeof(ctx->chunk_bmap));
+
+    esp_err_t err = publish_suffix_json(client, "config/get", printed);
+    cJSON_free(printed);
+
+    if (err != ESP_OK) {
+        transfer_reset(ctx);
+        return err;
+    }
+
+    strncpy(rid_out, rid, IOTMER_CONFIG_RID_LEN - 1U);
+    rid_out[IOTMER_CONFIG_RID_LEN - 1U] = '\0';
     return ESP_OK;
 }
 
@@ -616,7 +674,16 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
     cJSON *jtot = cJSON_GetObjectItemCaseSensitive(root, "total_chunks");
     cJSON *jb64 = cJSON_GetObjectItemCaseSensitive(root, "data_b64");
 
-    if (!cJSON_IsString(jrid) || jrid->valuestring == NULL || !cJSON_IsBool(jok) ||
+    /*
+     * rid first: a malformed or foreign response (another transfer / retained junk)
+     * must never abort our active transfer via the validation below.
+     */
+    if (!cJSON_IsString(jrid) || jrid->valuestring == NULL ||
+        strcmp(jrid->valuestring, ctx->pending_rid) != 0) {
+        return ESP_OK; /* not for our active transfer */
+    }
+
+    if (!cJSON_IsBool(jok) ||
         !cJSON_IsNumber(jver) || !cJSON_IsString(jsha) || jsha->valuestring == NULL ||
         !cJSON_IsString(jenc) || jenc->valuestring == NULL || !cJSON_IsNumber(jidx) ||
         !cJSON_IsNumber(jtot) || !cJSON_IsString(jb64) || jb64->valuestring == NULL ||
@@ -624,7 +691,6 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
         emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(chunked): missing fields", true);
         return ESP_FAIL;
     }
-    (void)jcb;
 
     if (!content_type_is_application_json(jct->valuestring)) {
         emit_fail(ctx, cb, user_ctx, ctx->pending_rid,
@@ -632,10 +698,6 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
         return ESP_FAIL;
     }
 
-    if (strcmp(jrid->valuestring, ctx->pending_rid) != 0) {
-        /* Not for our active transfer */
-        return ESP_OK;
-    }
     if (!cJSON_IsTrue(jok)) {
         emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(chunked): ok!=true", true);
         return ESP_FAIL;
@@ -656,9 +718,17 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
     const char *sha = jsha->valuestring;
     uint32_t idx    = (uint32_t)jidx->valuedouble;
     uint32_t tot    = (uint32_t)jtot->valuedouble;
+    uint32_t cbytes = (uint32_t)jcb->valuedouble;
 
-    if (tot == 0U || tot > IOTMER_CONFIG_MAX_CHUNKS) {
+    if (tot == 0U || tot > IOTMER_CONFIG_MAX_CHUNKS || idx >= tot) {
         emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(chunked): total_chunks invalid", true);
+        return ESP_FAIL;
+    }
+
+    const size_t h = half_cap(ctx);
+    if (cbytes == 0U || (uint64_t)(tot - 1U) * cbytes >= (uint64_t)h) {
+        emit_fail(ctx, cb, user_ctx, ctx->pending_rid,
+                  "resp(chunked): chunk_bytes invalid / payload too large for buffer", true);
         return ESP_FAIL;
     }
 
@@ -669,11 +739,13 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
         strncpy(ctx->resp_sha_hex, sha, sizeof(ctx->resp_sha_hex) - 1U);
         ctx->resp_sha_hex[sizeof(ctx->resp_sha_hex) - 1U] = '\0';
         ctx->total_chunks = tot;
+        ctx->chunk_bytes  = cbytes;
         ctx->gzip_len     = 0;
         memset(ctx->chunk_bmap, 0, sizeof(ctx->chunk_bmap));
     } else {
         if (ctx->resp_version != ver || strcmp(ctx->resp_sha_hex, sha) != 0 ||
-            ctx->total_chunks != tot || ctx->resp_chunk_is_gzip != path_gzip) {
+            ctx->total_chunks != tot || ctx->resp_chunk_is_gzip != path_gzip ||
+            ctx->chunk_bytes != cbytes) {
             emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(chunked): inconsistent metadata", true);
             return ESP_FAIL;
         }
@@ -683,20 +755,30 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
     if (!is_new_chunk) {
         ESP_LOGW(TAG, "duplicate chunk_index=%u (ignored)", (unsigned)idx);
     } else {
-        esp_err_t eb =
-            b64_decode_append(ctx, jb64->valuestring, strlen(jb64->valuestring));
+        /* Place by index, not arrival order — tolerates out-of-order delivery. */
+        const size_t off = (size_t)idx * (size_t)ctx->chunk_bytes;
+        size_t olen = 0;
+        esp_err_t eb = b64_decode_at(ctx, off, jb64->valuestring,
+                                     strlen(jb64->valuestring), &olen);
         if (eb != ESP_OK) {
             emit_fail(ctx, cb, user_ctx, ctx->pending_rid,
-                       "resp(chunked): base64/decode append failed", true);
+                       "resp(chunked): base64 decode failed", true);
             return eb;
+        }
+        if (idx + 1U < tot && olen != (size_t)ctx->chunk_bytes) {
+            /* Only the final chunk may be short; anything else breaks placement. */
+            emit_fail(ctx, cb, user_ctx, ctx->pending_rid,
+                       "resp(chunked): non-final chunk size != chunk_bytes", true);
+            return ESP_FAIL;
+        }
+        if (idx + 1U == tot) {
+            ctx->gzip_len = off + olen; /* total decoded length */
         }
     }
 
     if (!chunks_complete(ctx)) {
         return ESP_OK;
     }
-
-    const size_t h = half_cap(ctx);
     size_t         json_len = 0;
     const uint8_t *sha_in  = NULL;
 
@@ -758,13 +840,14 @@ static esp_err_t handle_resp_error(iotmer_config_ctx_t *ctx, cJSON *root,
     cJSON *jrid = cJSON_GetObjectItemCaseSensitive(root, "rid");
     cJSON *jok  = cJSON_GetObjectItemCaseSensitive(root, "ok");
     cJSON *jer  = cJSON_GetObjectItemCaseSensitive(root, "error");
-    if (!cJSON_IsString(jrid) || jrid->valuestring == NULL || !cJSON_IsBool(jok) ||
-        !cJSON_IsObject(jer)) {
+    /* rid first: a foreign/malformed error resp must not abort our transfer. */
+    if (!cJSON_IsString(jrid) || jrid->valuestring == NULL ||
+        strcmp(jrid->valuestring, ctx->pending_rid) != 0) {
+        return ESP_OK;
+    }
+    if (!cJSON_IsBool(jok) || !cJSON_IsObject(jer)) {
         emit_fail(ctx, cb, user_ctx, ctx->pending_rid, "resp(err): missing fields", true);
         return ESP_FAIL;
-    }
-    if (strcmp(jrid->valuestring, ctx->pending_rid) != 0) {
-        return ESP_OK;
     }
     if (cJSON_IsTrue(jok)) {
         return ESP_OK;
@@ -847,6 +930,22 @@ esp_err_t iotmer_config_on_mqtt(iotmer_config_ctx_t *ctx, iotmer_client_t *clien
     }
     if (!iotmer_topics_match_config(topic, client->creds.workspace_slug, client->creds.device_key)) {
         return ESP_ERR_INVALID_ARG;
+    }
+
+    /*
+     * A deferred EV_CONFIG_JSON callback is still consuming ctx->buf on the worker
+     * task; both handle_meta and handle_resp write into that buffer. Drop the
+     * message instead of corrupting the JSON mid-read (cloud retries via QoS1).
+     */
+    if (ctx->cb_busy) {
+        ESP_LOGW(TAG, "config message dropped — deferred callback still running");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    /* Never let a lost response wedge the context: stale transfers self-heal. */
+    if (transfer_timed_out(ctx)) {
+        ESP_LOGW(TAG, "config transfer timed out — resetting state");
+        transfer_reset(ctx);
     }
 
     if (topic_suffix_is(topic, "config/meta")) {

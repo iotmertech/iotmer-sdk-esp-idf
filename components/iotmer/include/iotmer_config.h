@@ -102,9 +102,22 @@ typedef struct {
     uint32_t resp_version;
     char     resp_sha_hex[IOTMER_CONFIG_SHA_HEX_LEN];
     uint32_t total_chunks;
+    /** Decoded bytes per chunk (from the first `config/resp`); places chunks by index. */
+    uint32_t chunk_bytes;
 
     uint32_t chunk_bmap[8]; /* 256 bits */
     size_t   gzip_len;
+
+    /** esp_timer_get_time() at iotmer_config_request(); stale transfers auto-reset
+     *  after CONFIG_IOTMER_CONFIG_TRANSFER_TIMEOUT_MS. */
+    int64_t  transfer_start_us;
+
+    /**
+     * Deferred IOTMER_CONFIG_EV_CONFIG_JSON in flight: the worker task still reads
+     * `buf`, so inbound config messages are dropped until the callback returns.
+     * Internal use (CONFIG_IOTMER_CONFIG_DEFER_CALLBACKS).
+     */
+    volatile bool cb_busy;
 } iotmer_config_ctx_t;
 
 /** Zero ctx; wire buffer pointers. */
@@ -113,6 +126,13 @@ void iotmer_config_ctx_init(iotmer_config_ctx_t *ctx, uint8_t *buf, size_t cap);
 /** Optional: declare what the device already applied (sent as `have` on pull). */
 void iotmer_config_set_have(iotmer_config_ctx_t *ctx, uint32_t version, const char *sha256_hex);
 void iotmer_config_clear_have(iotmer_config_ctx_t *ctx);
+
+/**
+ * Abort any in-flight `config/get` transfer and reset the reassembly state so a new
+ * iotmer_config_request() can be issued. Transfers also auto-reset after
+ * CONFIG_IOTMER_CONFIG_TRANSFER_TIMEOUT_MS without a complete response.
+ */
+void iotmer_config_abort(iotmer_config_ctx_t *ctx);
 
 /**
  * Dispatch `config/#` MQTT payload (call from `iotmer_subscribe_config` callback).

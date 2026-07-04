@@ -372,7 +372,9 @@ esp_err_t iotmer_wifi_connect(void)
             sizeof(wifi_cfg.sta.ssid) - 1);
     strncpy((char *)wifi_cfg.sta.password, pass,
             sizeof(wifi_cfg.sta.password) - 1);
-    wifi_cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    /* Empty password = open network; a WPA2 floor there would never associate. */
+    wifi_cfg.sta.threshold.authmode = (pass[0] == '\0') ? WIFI_AUTH_OPEN
+                                                        : WIFI_AUTH_WPA2_PSK;
     wifi_cfg.sta.pmf_cfg.capable    = true;
     wifi_cfg.sta.pmf_cfg.required   = false;
 

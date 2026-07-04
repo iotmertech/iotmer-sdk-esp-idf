@@ -23,6 +23,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "mqtt_client.h"
 #include "sdkconfig.h"
@@ -69,10 +70,57 @@
 
 #define TAG "iotmer_client"
 
+/* Settle time between MQTT teardown and restart (sockets / TLS buffers release). */
+#define IOTMER_HARD_RECONNECT_SETTLE_MS 200
+
 /* ------------------------------------------------------------------ */
 /* ------------------------------------------------------------------ */
 /* Internal helpers                                                     */
 /* ------------------------------------------------------------------ */
+
+/*
+ * Guards client->creds against the background firmware-poll writer.
+ * Single static mutex (one IOTMER client per firmware in practice): +~80 B heap
+ * once, no per-client cost. Held only for short memcpy/config-build windows.
+ */
+static SemaphoreHandle_t s_creds_lock;
+
+static void creds_lock_take(void)
+{
+    if (s_creds_lock) {
+        (void)xSemaphoreTake(s_creds_lock, portMAX_DELAY);
+    }
+}
+
+static void creds_lock_give(void)
+{
+    if (s_creds_lock) {
+        (void)xSemaphoreGive(s_creds_lock);
+    }
+}
+
+/*
+ * TLS coexistence hooks: acquire/release must pair exactly once per connect
+ * attempt — including failed attempts — or the app-side resources freed in
+ * on_tls_acquire (e.g. a suspended BLE stack) are never restored.
+ */
+static void tls_hook_acquire(iotmer_client_t *client)
+{
+    if (client->cfg.tls && client->cfg.on_tls_acquire && !client->tls_hook_held) {
+        client->tls_hook_held = true;
+        client->cfg.on_tls_acquire(client->cfg.user_ctx);
+    }
+}
+
+static void tls_hook_release(iotmer_client_t *client)
+{
+    if (client->tls_hook_held) {
+        client->tls_hook_held = false;
+        if (client->cfg.on_tls_release) {
+            client->cfg.on_tls_release(client->cfg.user_ctx);
+        }
+    }
+}
 
 /*
  * Apply optional CONFIG_IOTMER_WORKSPACE_SLUG when slug is still empty after provision/NVS.
@@ -98,6 +146,8 @@ static void ensure_workspace_slug(iotmer_creds_t *creds)
 static TaskHandle_t s_fw_poll_task;
 /* OTA rejected the downloaded image (wrong chip / corrupt header, etc.) — keep polling. */
 static bool s_fw_poll_mismatch_retry;
+/* Cooperative shutdown request; the task checks it at every checkpoint and exits itself. */
+static volatile bool s_fw_poll_stop_req;
 
 static void fw_poll_note_ota_result(esp_err_t ota_err)
 {
@@ -136,12 +186,26 @@ static bool creds_need_firmware_poll(const iotmer_creds_t *c)
     return true;
 }
 
+/*
+ * Cooperative stop: never vTaskDelete() a task that may be inside a TLS/NVS/heap
+ * operation (killing it there leaks buffers or wedges locks). Signal it, wake it
+ * from its sleep, and give it a bounded window to exit on its own.
+ */
 static void firmware_poll_stop(void)
 {
-    if (s_fw_poll_task) {
-        TaskHandle_t h = s_fw_poll_task;
-        s_fw_poll_task = NULL;
-        vTaskDelete(h);
+    TaskHandle_t h = s_fw_poll_task;
+    if (!h) {
+        return;
+    }
+    s_fw_poll_stop_req = true;
+    xTaskNotifyGive(h);
+
+    for (int i = 0; i < 100 && s_fw_poll_task != NULL; ++i) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    if (s_fw_poll_task != NULL) {
+        /* Mid-provision (long TLS round). It will exit at its next checkpoint. */
+        ESP_LOGW(TAG, "firmware poll task still busy — will exit at next checkpoint");
     }
 }
 
@@ -169,13 +233,20 @@ static void firmware_poll_task(void *arg)
      */
     unsigned mismatch_round = 0;
     bool first_loop = true;
+    /*
+     * Work on a heap-transient copy of the creds (freed every round) so the long
+     * provision/OTA phases never mutate client->creds while the MQTT/timer paths
+     * read it. Results are copied back under the creds lock (short memcpy).
+     */
+    iotmer_creds_t *work = NULL;
 
     for (;;) {
-        if (first_loop) {
-            first_loop = false;
-            vTaskDelay(pdMS_TO_TICKS(500));
-        } else {
-            vTaskDelay(pdMS_TO_TICKS(firmware_poll_sleep_ms(client)));
+        uint32_t sleep_ms = first_loop ? 500U : (uint32_t)firmware_poll_sleep_ms(client);
+        first_loop = false;
+        /* Notification-based sleep: firmware_poll_stop() wakes us immediately. */
+        (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(sleep_ms));
+        if (s_fw_poll_stop_req) {
+            break;
         }
 
         if (!client || !creds_need_firmware_poll(&client->creds)) {
@@ -185,11 +256,23 @@ static void firmware_poll_task(void *arg)
 
         /* Let IDLE / WiFi / lwIP run before a long TLS session. */
         vTaskDelay(pdMS_TO_TICKS(200));
+        if (s_fw_poll_stop_req) {
+            break;
+        }
+
+        work = (iotmer_creds_t *)malloc(sizeof(*work));
+        if (!work) {
+            ESP_LOGW(TAG, "firmware poll: no heap for creds workspace — retrying later");
+            continue;
+        }
+        creds_lock_take();
+        *work = client->creds;
+        creds_lock_give();
 
         bool run_provision = true;
         if (s_fw_poll_mismatch_retry &&
-            client->creds.firmware_url[0] != '\0' &&
-            client->creds.firmware_checksum_sha256[0] != '\0') {
+            work->firmware_url[0] != '\0' &&
+            work->firmware_checksum_sha256[0] != '\0') {
             mismatch_round++;
             run_provision = (mismatch_round % 5u == 1u);
             if (!run_provision) {
@@ -204,30 +287,43 @@ static void firmware_poll_task(void *arg)
         if (run_provision) {
             ESP_LOGI(TAG, "firmware poll: re-provisioning (next sleep=%d ms)",
                      firmware_poll_sleep_ms(client));
-            e = iotmer_provision(&client->creds, &provision_https);
+            e = iotmer_provision(work, &provision_https);
             if (e != ESP_OK) {
                 ESP_LOGW(TAG, "firmware poll provision failed: %s", esp_err_to_name(e));
+                free(work);
+                work = NULL;
                 vTaskDelay(pdMS_TO_TICKS(100));
                 continue;
             }
-            ensure_workspace_slug(&client->creds);
-            e = iotmer_nvs_save_creds(&client->creds);
+            ensure_workspace_slug(work);
+            e = iotmer_nvs_save_creds(work);
             if (e != ESP_OK) {
                 ESP_LOGW(TAG, "firmware poll NVS save: %s", esp_err_to_name(e));
             }
+            creds_lock_take();
+            client->creds = *work;
+            creds_lock_give();
         }
 
         vTaskDelay(pdMS_TO_TICKS(100));
+        if (s_fw_poll_stop_req) {
+            free(work);
+            work = NULL;
+            break;
+        }
 
-        e = iotmer_ota_apply_if_needed(&client->creds, provision_https);
+        /* Reboots into the new image on success; saves applied SHA to NVS itself. */
+        e = iotmer_ota_apply_if_needed(work, provision_https);
         if (e != ESP_OK) {
             ESP_LOGW(TAG, "firmware poll OTA: %s", esp_err_to_name(e));
         }
         fw_poll_note_ota_result(e);
+        free(work);
+        work = NULL;
 
         vTaskDelay(pdMS_TO_TICKS(50));
 
-        if (!creds_need_firmware_poll(&client->creds)) {
+        if (s_fw_poll_stop_req || !creds_need_firmware_poll(&client->creds)) {
             ESP_LOGI(TAG, "firmware poll: stopping poll task");
             break;
         }
@@ -244,6 +340,12 @@ static esp_err_t firmware_poll_start(iotmer_client_t *client)
     }
 
     firmware_poll_stop();
+    if (s_fw_poll_task != NULL) {
+        /* Old task refused to exit in time; never run two pollers on the same client. */
+        ESP_LOGE(TAG, "firmware poll: previous task still running — not starting a new one");
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_fw_poll_stop_req = false;
 
     BaseType_t ok = xTaskCreate(
         firmware_poll_task,
@@ -405,9 +507,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
         ESP_LOGI(TAG, "MQTT connected");
 
         /* Handshake done: let the app restore any resources freed for TLS. */
-        if (client->cfg.on_tls_release) {
-            client->cfg.on_tls_release(client->cfg.user_ctx);
-        }
+        tls_hook_release(client);
 
         /* Presence/LWT: on every connect, publish retained online JSON. */
         if (client->cfg.presence_lwt_enable) {
@@ -431,6 +531,12 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
 
     case MQTT_EVENT_DISCONNECTED: {
         client->connected = false;
+        /*
+         * Failed attempt or lost connection: release the TLS-coexistence resources
+         * (per the on_tls_release contract) so the app is never left suspended.
+         * The next connect attempt re-runs on_tls_acquire.
+         */
+        tls_hook_release(client);
         /* Any half-reassembled message from this session is now stale. */
         rx_assembly_reset(client);
         uint32_t wait_ms = client->mqtt_auth_backoff_ms != 0U
@@ -457,6 +563,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
         mark_broker_activity(client);
         /* For SUBACK, esp-mqtt exposes the granted QoS byte(s) in event->data. */
         int rc = (event->data && event->data_len > 0) ? (int)(uint8_t)event->data[0] : 0;
+        if (rc >= 0x80) {
+            /* SUBACK 0x80 = broker refused the subscription; honour the documented
+             * "negative on failure" contract instead of handing the app 128. */
+            rc = -rc;
+        }
         if (client->cfg.on_subscribed) {
             client->cfg.on_subscribed(client, event->msg_id, rc, client->cfg.user_ctx);
         }
@@ -571,8 +682,27 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
 static void reconnect_timer_cb(void *arg)
 {
     iotmer_client_t *client = (iotmer_client_t *)arg;
-    if (!client || !client->mqtt) return;
+    if (!client) return;
+
+    if (!client->mqtt) {
+        /* Second phase of a hard reconnect: teardown already happened, restart now. */
+        ESP_LOGI(TAG, "hard reconnect: starting fresh MQTT client");
+        esp_err_t e = mqtt_client_start(client);
+        if (e != ESP_OK && client->reconnect_timer) {
+            uint32_t wait_ms = client->cfg.reconnect_delay_ms > 0
+                                   ? (uint32_t)client->cfg.reconnect_delay_ms
+                                   : 5000U;
+            ESP_LOGW(TAG, "hard reconnect: restart failed (%s) — retrying in %u ms",
+                     esp_err_to_name(e), wait_ms);
+            (void)esp_timer_start_once((esp_timer_handle_t)client->reconnect_timer,
+                                       (uint64_t)wait_ms * 1000ULL);
+        }
+        return;
+    }
+
     ESP_LOGI(TAG, "Attempting MQTT reconnect...");
+    /* Soft reconnect performs a TLS handshake too — re-run the acquire hook. */
+    tls_hook_acquire(client);
     esp_err_t e = esp_mqtt_client_reconnect((esp_mqtt_client_handle_t)client->mqtt);
     if (e != ESP_OK) {
         /*
@@ -655,6 +785,14 @@ esp_err_t iotmer_init(iotmer_client_t *client, const iotmer_config_t *cfg)
     memset(client, 0, sizeof(*client));
     client->cfg = *cfg;
 
+    /* One-time ~80 B allocation; guards creds against the firmware poll writer. */
+    if (!s_creds_lock) {
+        s_creds_lock = xSemaphoreCreateMutex();
+        if (!s_creds_lock) {
+            ESP_LOGW(TAG, "creds mutex create failed — continuing without lock");
+        }
+    }
+
     /* Connect WiFi — blocks until IP acquired or timeout. */
     esp_err_t err = iotmer_wifi_connect();
     if (err != ESP_OK) {
@@ -722,6 +860,37 @@ esp_err_t iotmer_init(iotmer_client_t *client, const iotmer_config_t *cfg)
  */
 static esp_err_t mqtt_client_start(iotmer_client_t *client)
 {
+    /*
+     * TLS coexistence (A1): give the app a chance to free contiguous internal RAM
+     * (e.g. suspend BLE) before the handshake. Optionally guard against an obviously
+     * insufficient heap and fail early with a clear error instead of an opaque
+     * mbedTLS -0x3000.
+     */
+    tls_hook_acquire(client);
+#if CONFIG_IOTMER_TLS_MIN_HEAP_GUARD > 0
+    if (client->cfg.tls) {
+        size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+        if (largest < (size_t)CONFIG_IOTMER_TLS_MIN_HEAP_GUARD) {
+            /* Give any just-triggered release (BLE deinit) a moment to settle, then re-check. */
+            vTaskDelay(pdMS_TO_TICKS(150));
+            largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+        }
+        if (largest < (size_t)CONFIG_IOTMER_TLS_MIN_HEAP_GUARD) {
+            ESP_LOGE(TAG, "TLS heap guard: largest free internal block %u < %d — aborting connect",
+                     (unsigned)largest, CONFIG_IOTMER_TLS_MIN_HEAP_GUARD);
+            tls_hook_release(client);
+            return ESP_ERR_NO_MEM;
+        }
+    }
+#endif
+
+    /*
+     * Hold the creds lock while reading creds and until esp_mqtt_client_init()
+     * has duplicated the strings — the firmware poll task may swap creds in
+     * the background. Held only for the (quick) config build, not the handshake.
+     */
+    creds_lock_take();
+
     int resolved_port = client->creds.mqtt_port
                             ? client->creds.mqtt_port
                             : client->cfg.broker_port;
@@ -734,34 +903,6 @@ static esp_err_t mqtt_client_start(iotmer_client_t *client)
     const char *mqtt_client_id = (client->creds.mqtt_username[0] != '\0')
                                      ? client->creds.mqtt_username
                                      : client->creds.device_id;
-
-    /*
-     * TLS coexistence (A1): give the app a chance to free contiguous internal RAM
-     * (e.g. suspend BLE) before the handshake. Optionally guard against an obviously
-     * insufficient heap and fail early with a clear error instead of an opaque
-     * mbedTLS -0x3000.
-     */
-    if (client->cfg.tls && client->cfg.on_tls_acquire) {
-        client->cfg.on_tls_acquire(client->cfg.user_ctx);
-    }
-#if CONFIG_IOTMER_TLS_MIN_HEAP_GUARD > 0
-    if (client->cfg.tls) {
-        size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
-        if (largest < (size_t)CONFIG_IOTMER_TLS_MIN_HEAP_GUARD) {
-            /* Give any just-triggered release (BLE deinit) a moment to settle, then re-check. */
-            vTaskDelay(pdMS_TO_TICKS(150));
-            largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
-        }
-        if (largest < (size_t)CONFIG_IOTMER_TLS_MIN_HEAP_GUARD) {
-            ESP_LOGE(TAG, "TLS heap guard: largest free internal block %u < %d — aborting connect",
-                     (unsigned)largest, CONFIG_IOTMER_TLS_MIN_HEAP_GUARD);
-            if (client->cfg.on_tls_release) {
-                client->cfg.on_tls_release(client->cfg.user_ctx);
-            }
-            return ESP_ERR_NO_MEM;
-        }
-    }
-#endif
 
     esp_mqtt_client_config_t mcfg = {
         .broker.address.hostname              = client->creds.mqtt_host,
@@ -779,16 +920,18 @@ static esp_err_t mqtt_client_start(iotmer_client_t *client)
 #endif
     };
 
+    esp_err_t err = ESP_OK;
+
     if (client->cfg.presence_lwt_enable) {
         /* MQTT LWT must reference memory that lives at least until client stop/destroy. */
-        esp_err_t err = iotmer_topics_build_publish(client->presence_topic,
-                                                    sizeof(client->presence_topic),
-                                                    client->creds.workspace_slug,
-                                                    client->creds.device_key,
-                                                    "presence");
+        err = iotmer_topics_build_publish(client->presence_topic,
+                                          sizeof(client->presence_topic),
+                                          client->creds.workspace_slug,
+                                          client->creds.device_key,
+                                          "presence");
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "presence topic build failed: %s", esp_err_to_name(err));
-            return err;
+            goto fail;
         }
 
         /* Same JSON contract as iotmer_presence_publish(); ts=0 because the
@@ -806,14 +949,19 @@ static esp_err_t mqtt_client_start(iotmer_client_t *client)
 
     esp_mqtt_client_handle_t h = esp_mqtt_client_init(&mcfg);
     if (!h) {
-        return ESP_ERR_NO_MEM;
+        err = ESP_ERR_NO_MEM;
+        goto fail;
     }
 
-    esp_err_t err = esp_mqtt_client_register_event(h, ESP_EVENT_ANY_ID,
-                                                   mqtt_event_handler, client);
+    /* Config strings are duplicated by esp_mqtt_client_init(); safe to unlock. */
+    creds_lock_give();
+
+    err = esp_mqtt_client_register_event(h, ESP_EVENT_ANY_ID,
+                                         mqtt_event_handler, client);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "event register failed: %s", esp_err_to_name(err));
         esp_mqtt_client_destroy(h);
+        tls_hook_release(client);
         return err;
     }
 
@@ -821,6 +969,7 @@ static esp_err_t mqtt_client_start(iotmer_client_t *client)
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "mqtt start failed: %s", esp_err_to_name(err));
         esp_mqtt_client_destroy(h);
+        tls_hook_release(client);
         return err;
     }
 
@@ -829,6 +978,11 @@ static esp_err_t mqtt_client_start(iotmer_client_t *client)
              client->creds.mqtt_host, resolved_port,
              client->cfg.tls ? "yes" : "no", mqtt_client_id);
     return ESP_OK;
+
+fail:
+    creds_lock_give();
+    tls_hook_release(client);
+    return err;
 }
 
 esp_err_t iotmer_connect(iotmer_client_t *client)
@@ -917,29 +1071,32 @@ esp_err_t iotmer_reconnect_hard(iotmer_client_t *client)
     }
 
     client->connected = false;
+    /* The interrupted attempt owes a release before the next acquire. */
+    tls_hook_release(client);
 
     if (client->mqtt) {
         (void)esp_mqtt_client_stop((esp_mqtt_client_handle_t)client->mqtt);
         esp_mqtt_client_destroy((esp_mqtt_client_handle_t)client->mqtt);
         client->mqtt = NULL;
     }
+    /* Any half-reassembled inbound message died with the old session — free it now. */
+    rx_assembly_reset(client);
 
-    /* Brief settle so sockets / TLS buffers are fully released before re-init. */
-    vTaskDelay(pdMS_TO_TICKS(200));
-
-    esp_err_t err = mqtt_client_start(client);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "hard reconnect: restart failed (%s) — arming reconnect timer",
-                 esp_err_to_name(err));
-        if (client->reconnect_timer) {
-            uint32_t wait_ms = client->cfg.reconnect_delay_ms > 0
-                                   ? (uint32_t)client->cfg.reconnect_delay_ms
-                                   : 5000U;
-            (void)esp_timer_start_once((esp_timer_handle_t)client->reconnect_timer,
-                                       (uint64_t)wait_ms * 1000ULL);
-        }
+    if (client->reconnect_timer) {
+        /*
+         * Restart via the one-shot timer instead of vTaskDelay(): this function runs
+         * inside esp_timer callbacks (phantom watchdog / reconnect fallback), and
+         * blocking there stalls every other esp_timer in the system. The short delay
+         * also lets sockets / TLS buffers fully release before re-init.
+         */
+        (void)esp_timer_start_once((esp_timer_handle_t)client->reconnect_timer,
+                                   (uint64_t)IOTMER_HARD_RECONNECT_SETTLE_MS * 1000ULL);
+        return ESP_OK;
     }
-    return err;
+
+    /* No timer yet (iotmer_connect not called): synchronous fallback for app calls. */
+    vTaskDelay(pdMS_TO_TICKS(IOTMER_HARD_RECONNECT_SETTLE_MS));
+    return mqtt_client_start(client);
 }
 
 int64_t iotmer_ms_since_broker_activity(const iotmer_client_t *client)
@@ -985,7 +1142,23 @@ void iotmer_disconnect(iotmer_client_t *client)
         (void)esp_timer_stop((esp_timer_handle_t)client->phantom_timer);
     }
 
+    /*
+     * Graceful MQTT DISCONNECT suppresses the broker-side LWT, so the retained
+     * "online" presence would stick forever. Publish the retained offline status
+     * synchronously (esp_mqtt_client_publish sends on the caller task) first.
+     */
+    if (client->mqtt && client->connected && client->cfg.presence_lwt_enable &&
+        client->presence_topic[0] != '\0') {
+        char payload[64];
+        if (iotmer_presence_build_payload(payload, sizeof(payload), "offline") == ESP_OK) {
+            (void)esp_mqtt_client_publish((esp_mqtt_client_handle_t)client->mqtt,
+                                          client->presence_topic, payload, 0,
+                                          1 /* QoS 1 */, 1 /* retain */);
+        }
+    }
+
     client->connected = false;
+    tls_hook_release(client);
 
     if (client->mqtt) {
         (void)esp_mqtt_client_stop((esp_mqtt_client_handle_t)client->mqtt);

@@ -377,7 +377,8 @@ esp_err_t iotmer_ble_stop(void)
 
     s_started = false;
 
-    ble_hs_lock();
+    /* NimBLE GAP APIs take the host lock internally; wrapping them in
+     * ble_hs_lock() trips the !locked debug assertions. */
     if (ble_gap_adv_active()) {
         (void)ble_gap_adv_stop();
     }
@@ -385,7 +386,6 @@ esp_err_t iotmer_ble_stop(void)
     if (s_connected) {
         (void)ble_gap_terminate(s_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
     }
-    ble_hs_unlock();
 
     s_connected = false;
     s_conn_handle = 0;
@@ -419,8 +419,10 @@ esp_err_t iotmer_ble_suspend(void)
         return ESP_OK;
     }
     if (!s_inited) {
-        s_suspended = true;
-        s_resume_start = false;
+        /*
+         * Nothing to release. Do NOT mark suspended here: a later resume would
+         * re-init with the never-populated (all-zero) s_cfg.
+         */
         return ESP_OK;
     }
 
@@ -499,21 +501,29 @@ esp_err_t iotmer_ble_send_json(const uint8_t *data, size_t len)
         return ESP_FAIL;
     }
 
+    /*
+     * Check the connection before allocating: the not-connected early return must
+     * not leak an mbuf (ble_gatts_notify_custom is the only thing that frees it).
+     */
+    if (!s_connected) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const uint16_t conn_handle = s_conn_handle;
+
     struct os_mbuf *om = ble_hs_mbuf_from_flat(data, (uint16_t)len);
     if (om == NULL) {
         return ESP_ERR_NO_MEM;
     }
 
-    ble_hs_lock();
-    const bool connected = s_connected;
-    const uint16_t conn_handle = s_conn_handle;
-    const int rc = connected ? ble_gatts_notify_custom(conn_handle, tx_handle, om) : BLE_HS_ENOTCONN;
-    ble_hs_unlock();
-    if (rc != 0) {
-        return ESP_FAIL;
+    /*
+     * ble_gatts_notify_custom takes ownership of om (freed on every path) and
+     * acquires the host lock internally — must not be called under ble_hs_lock().
+     */
+    const int rc = ble_gatts_notify_custom(conn_handle, tx_handle, om);
+    if (rc == BLE_HS_ENOTCONN) {
+        return ESP_ERR_INVALID_STATE;
     }
-
-    return ESP_OK;
+    return rc == 0 ? ESP_OK : ESP_FAIL;
 }
 
 esp_err_t iotmer_ble_send_json_str(const char *json_str)

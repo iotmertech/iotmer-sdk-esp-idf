@@ -102,6 +102,7 @@ config IOTMER_FIRMWARE_POLL_INTERVAL_MS
 config IOTMER_FIRMWARE_POLL_AGGRESSIVE_MS
     int "Firmware poll fast interval (ms) when OTA failed or metadata missing"
     default 8000
+    depends on IOTMER_FIRMWARE_POLL
     help
         Used (only when IOTMER_FIRMWARE_POLL is enabled) instead of IOTMER_FIRMWARE_POLL_INTERVAL_MS
         while firmware_url/checksum are missing or after OTA image rejection (wrong chip, corrupt
@@ -176,6 +177,16 @@ config IOTMER_CONFIG_EVENT_TASK_PRIORITY
     default 5
     range 1 24
     depends on IOTMER_CONFIG_DEFER_CALLBACKS
+
+config IOTMER_CONFIG_TRANSFER_TIMEOUT_MS
+    int "Config transfer timeout (ms)"
+    default 30000
+    range 1000 600000
+    help
+        A config/get transfer that does not complete within this window is reset
+        automatically, so a lost config/resp can never leave the context stuck with
+        transfer_active set (which would block every further iotmer_config_request()).
+        Applications can also reset earlier via iotmer_config_abort().
 
 endmenu
 

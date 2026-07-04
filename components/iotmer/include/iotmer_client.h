@@ -172,6 +172,13 @@ struct iotmer_client_s {
      * Reset to 0 on successful MQTT_EVENT_CONNECTED.
      */
     uint32_t mqtt_auth_backoff_ms;
+
+    /**
+     * True while `on_tls_acquire` has been invoked and the matching `on_tls_release`
+     * is still owed (connect attempt in flight). Internal use — guarantees release
+     * is called exactly once per acquire, on success *and* on failure.
+     */
+    bool tls_hook_held;
 };
 
 /**
@@ -194,6 +201,10 @@ void      iotmer_disconnect(iotmer_client_t *client);
  * client config, registered subscriptions and callbacks. Use this when the socket is
  * dead / half-open and esp_mqtt_client_reconnect() no longer recovers. Triggered
  * automatically by the phantom watchdog and by the reconnect timer as a fallback.
+ *
+ * Note: after iotmer_connect() the restart phase runs asynchronously (armed via the
+ * reconnect timer after a short settle delay) so this is safe to call from timer
+ * callbacks; ESP_OK then means "teardown done, restart scheduled".
  */
 esp_err_t iotmer_reconnect_hard(iotmer_client_t *client);
 

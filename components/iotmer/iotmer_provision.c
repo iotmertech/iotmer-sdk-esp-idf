@@ -102,11 +102,12 @@ static esp_err_t http_post_json(const char *url, const char *auth_code,
     }
     resp[total] = '\0';
 
-    int content_len = esp_http_client_get_content_length(c);
-    if (content_len > 0 && total < content_len) {
-        ESP_LOGW(TAG, "provision response truncated: read %d bytes, Content-Length=%d (raise "
+    /* IDF 5+ returns int64_t; keep the full width to avoid truncation. */
+    int64_t content_len = esp_http_client_get_content_length(c);
+    if (content_len > 0 && (int64_t)total < content_len) {
+        ESP_LOGW(TAG, "provision response truncated: read %d bytes, Content-Length=%lld (raise "
                       "IOTMER_PROVISION_JSON_MAX / buffer in http_post_json caller)",
-                 total, content_len);
+                 total, (long long)content_len);
     } else if ((size_t)total >= resp_len - 1) {
         ESP_LOGW(TAG, "provision response filled buffer (%zu bytes) — body may be truncated",
                  resp_len);

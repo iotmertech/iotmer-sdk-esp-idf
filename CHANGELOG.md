@@ -4,6 +4,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-04
+
+Reliability and memory-safety patch. Both `iotmer` and `iotmer_ble` → **0.2.1**.
+
+### Added
+
+**iotmer**
+
+- `iotmer_config_abort()` — reset a stuck config transfer without reinitializing the whole context
+- `IOTMER_CONFIG_TRANSFER_TIMEOUT_MS` (default 30 s) — auto-reset when `config/resp` never completes
+
+### Fixed
+
+**iotmer**
+
+- **TLS hooks:** `on_tls_release` now runs on failed connect, disconnect, and init/start errors — apps that suspend BLE in `on_tls_acquire` are no longer left suspended
+- **MQTT disconnect:** `iotmer_disconnect()` publishes retained `{"status":"offline",…}` when LWT is enabled (graceful close no longer leaves stale “online”)
+- **Hard reconnect:** no longer blocks the esp_timer task (`vTaskDelay` removed); restart is scheduled via the reconnect timer
+- **Firmware poll:** cooperative task stop (no `vTaskDelete` mid-TLS); poll works on a transient creds copy so MQTT paths never read half-cleared credentials
+- **Config protocol:** deferred callback buffer race closed (`cb_busy`); chunks placed by `chunk_index` offset; foreign/malformed `config/resp` no longer aborts the active transfer; transfer armed before publish
+- **MQTT wildcard:** `a/#` now matches parent topic `a` per MQTT 3.1.1
+- **SUBACK:** broker refusal (0x80) reported as negative `rc` in `on_subscribed`
+- **NVS:** empty firmware metadata / `dht` / `workspace_slug` keys are erased instead of leaving stale values
+- **Provision:** `Content-Length` read as `int64_t` (IDF 5+)
+- **Wi‑Fi:** open networks (empty password) use `WIFI_AUTH_OPEN` threshold instead of WPA2-only
+
+**iotmer_ble**
+
+- **Notify:** fixed mbuf leak when `iotmer_ble_send_json()` called while disconnected
+- **NimBLE:** GAP terminate / notify / `ble_gatts_chr_updated` no longer called under `ble_hs_lock()` (debug assert)
+- **Suspend:** calling `iotmer_ble_suspend()` before init no longer marks the stack suspended with an empty config
+
+### Changed
+
+- `iotmer_reconnect_hard()` returns `ESP_OK` once teardown completes and restart is scheduled (async path when the reconnect timer exists)
+
 ## [0.2.0] - 2026-07-03
 
 Breaking release. Legacy API shims removed; all bundled examples updated.

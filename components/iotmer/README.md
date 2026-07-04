@@ -70,7 +70,7 @@ iotmer_subscribe(&client, "myws/mydev/custom/#", 1, on_custom, NULL);
 | Wi‑Fi | Retries with 15–60 s backoff after fast retries exhaust. Never stops trying. |
 | MQTT fragments | Reassembles messages larger than `CONFIG_MQTT_BUFFER_SIZE` (cap: `IOTMER_MQTT_RX_ASSEMBLY_MAX`, default 8 KB). |
 | OTA | Verifies SHA256 against provision checksum before activating the image. |
-| Presence | Retained JSON on `{workspace_slug}/{device_key}/presence`. LWT on unexpected disconnect. |
+| Presence | Retained JSON on `{workspace_slug}/{device_key}/presence`. LWT on unexpected disconnect. Graceful `iotmer_disconnect()` publishes retained offline when LWT is enabled. |
 | Outbox | QoS1+ queue capped at `IOTMER_MQTT_OUTBOX_LIMIT` (default 16 KB). |
 
 Presence payload:
@@ -94,6 +94,8 @@ Set optional callbacks on `iotmer_config_t` before `iotmer_init()`:
 | `on_tls_acquire` / `on_tls_release` | Free RAM before TLS handshake (e.g. suspend BLE) |
 
 Call `iotmer_reconnect_hard()` for a full MQTT client restart when the socket is dead.
+
+Config pull stuck? Call `iotmer_config_abort()` or wait for `IOTMER_CONFIG_TRANSFER_TIMEOUT_MS` (default 30 s).
 
 ## Advanced bring-up
 

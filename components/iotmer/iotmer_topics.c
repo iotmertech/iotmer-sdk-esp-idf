@@ -128,6 +128,10 @@ bool iotmer_topic_filter_matches(const char *filter, const char *topic)
             }
             continue;
         }
+        if (*topic == '\0') {
+            /* MQTT 3.1.1: "foo/#" also matches the parent level "foo". */
+            return filter[0] == '/' && filter[1] == '#';
+        }
         if (*filter != *topic) {
             return false;
         }
