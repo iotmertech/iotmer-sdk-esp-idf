@@ -51,7 +51,7 @@ Exit code `1` when errors are found; warnings do not fail the command.
 |-----|------|
 | **doctor** | `iotmer doctor` on all `examples/0*` + `create-app` smoke |
 | **build-examples** | Matrix: examples × `esp32` / `esp32c3` / `esp32s3` (ESP-IDF v6.0) |
-| **build-scaffold** | `create-app` in `$RUNNER_TEMP` + `idf.py build` (nothing under repo tree) |
+| **build-scaffold** | `create-app` → `ci-scratch/` (gitignored) + `idf.py build` |
 
 Reproduce locally (doctor only without ESP-IDF):
 

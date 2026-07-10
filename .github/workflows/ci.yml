@@ -94,12 +94,14 @@ jobs:
 
       - name: create-app (local SDK deps)
         run: |
+          # esp-idf-ci-action only sees paths inside the checkout (Docker mount).
+          # ci-scratch/ is gitignored — never commit it.
           python tools/iotmer.py create-app ci-scaffold \
-            --deps local --sdk-root . -o "${RUNNER_TEMP}/iotmer-ci" --chip esp32c3 --profile field
+            --deps local --sdk-root . -o ci-scratch --chip esp32c3 --profile field
 
       - name: ESP-IDF build
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v6.0
           target: esp32c3
-          path: ${{ runner.temp }}/iotmer-ci/ci-scaffold
+          path: ci-scratch/ci-scaffold
