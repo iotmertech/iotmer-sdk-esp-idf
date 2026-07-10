@@ -38,16 +38,30 @@ iotmer_connect(&client);
 iotmer_subscribe_commands(&client, on_command, NULL);
 ```
 
+## Custom hardware (your PCB)
+
+No IOTMER reference board is required. Scaffold a project with separated `hw/` and `cloud/` layers:
+
+```bash
+python tools/iotmer.py create-app my-gateway --chip esp32s3 --profile field
+python tools/iotmer.py doctor --project my-gateway
+```
+
+See [`tools/README.md`](tools/README.md) and [`docs/sdk/esp-idf/custom-hardware.md`](docs/sdk/esp-idf/custom-hardware.md).
+
 ## Repository layout
 
 | Path | Contents |
 |------|----------|
+| [`tools/`](tools/README.md) | `create-app` scaffold, `doctor` sdkconfig checks |
 | [`examples/`](examples/README.md) | Reference firmware (provision, telemetry, config, BLE) |
 | [`components/iotmer/`](components/iotmer/README.md) | Core component |
 | [`components/iotmer_ble/`](components/iotmer_ble/README.md) | Optional BLE transport |
 | [`docs/`](docs/) | Markdown source for [docs.iotmer.com](https://docs.iotmer.com/) |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release notes |
 | [`AGENTS.md`](AGENTS.md) | Contributor and agent guide |
+
+CI: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — `iotmer doctor`, example build matrix, scaffold smoke build.
 
 ## Documentation
 

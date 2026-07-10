@@ -1,0 +1,11 @@
+menu "HW (custom board)"
+
+    config HW_STATUS_LED_GPIO
+        int "Status LED GPIO (-1 = disabled)"
+        range -1 48
+        default -1
+        help
+            Optional activity LED for bring-up. Set to the GPIO connected on your PCB,
+            or -1 if not used. All other pins and peripherals belong in hw_init.c.
+
+endmenu

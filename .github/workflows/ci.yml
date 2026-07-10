@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "components/**"
+      - "examples/**"
+      - "tools/**"
+      - "docs/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "components/**"
+      - "examples/**"
+      - "tools/**"
+      - "docs/**"
+      - ".github/workflows/ci.yml"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  doctor:
+    name: iotmer doctor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Doctor — reference examples
+        run: |
+          set -euo pipefail
+          for ex in examples/0[1-5]_*/; do
+            echo "::group::doctor ${ex}"
+            python tools/iotmer.py doctor --project "$ex"
+            echo "::endgroup::"
+          done
+
+      - name: Doctor — create-app scaffold
+        run: |
+          set -euo pipefail
+          python tools/iotmer.py create-app ci-doctor-smoke \
+            --deps local --sdk-root . -o /tmp/iotmer-ci --chip esp32c3 --profile field
+          python tools/iotmer.py doctor --project /tmp/iotmer-ci/ci-doctor-smoke
+
+  build-examples:
+    name: build ${{ matrix.example }} (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    needs: doctor
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - example: examples/01_provisioning
+            target: esp32c3
+          - example: examples/02_telemetry
+            target: esp32
+          - example: examples/02_telemetry
+            target: esp32c3
+          - example: examples/02_telemetry
+            target: esp32s3
+          - example: examples/03_lwt_presence
+            target: esp32c3
+          - example: examples/04_config
+            target: esp32c3
+          - example: examples/05_ble_json
+            target: esp32c3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ESP-IDF build
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: ${{ matrix.target }}
+          path: ${{ matrix.example }}
+
+  build-scaffold:
+    name: build create-app scaffold (esp32c3)
+    runs-on: ubuntu-latest
+    needs: doctor
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: create-app (local SDK deps)
+        run: |
+          python tools/iotmer.py create-app ci-scaffold \
+            --deps local --sdk-root . -o ci-scratch --chip esp32c3 --profile field
+
+      - name: ESP-IDF build
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: esp32c3
+          path: ci-scratch/ci-scaffold

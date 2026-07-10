@@ -68,4 +68,7 @@ docs/
 components/iotmer/dist/
 components/iotmer_ble/dist/
 
+# CI scaffold output (create-app smoke builds)
+ci-scratch/
+
 .vscode/

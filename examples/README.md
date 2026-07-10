@@ -2,6 +2,19 @@
 
 Reference firmware for the `iotmer` component. Create a workspace in the [console](https://iotmer.com) before flashing.
 
+**Custom PCB?** Use [`tools/iotmer.py create-app`](../tools/README.md) for a `hw/` + `cloud/` scaffold, or copy these examples as-is.
+
+## Factory vs field
+
+| Profile | Example | Auth code | Use |
+|---------|---------|-----------|-----|
+| **Factory** | [`01_provisioning`](01_provisioning/) | Set in menuconfig | Production line: HTTPS provision + OTA |
+| **Field** | [`02_telemetry`](02_telemetry/) | Empty | Deployed device: NVS session + MQTT |
+
+Details: [`docs/sdk/esp-idf/factory-field-profiles.md`](../docs/sdk/esp-idf/factory-field-profiles.md)
+
+## Examples
+
 | Example | Use case |
 |---------|----------|
 | [`01_provisioning`](01_provisioning/) | Factory: HTTPS provision, NVS, optional OTA |
@@ -34,6 +47,12 @@ After clone, run `set-target` once — `build/`, `managed_components/`, and `sdk
 Kconfig sources: `components/iotmer/Kconfig.projbuild`, `components/iotmer_ble/Kconfig.projbuild`
 
 Use `sdkconfig.defaults` for CI. Do not commit production secrets.
+
+Validate before release:
+
+```bash
+python ../tools/iotmer.py doctor --project .
+```
 
 ## Boot flow
 

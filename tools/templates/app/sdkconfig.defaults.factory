@@ -1,0 +1,28 @@
+# Factory firmware profile — HTTPS provision + optional OTA on the production line.
+# Active profile after create-app --profile factory. To switch later:
+#   cp sdkconfig.defaults.factory sdkconfig.defaults
+
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_ota_4mb.csv"
+
+# Factory: re-flash when server returns the same SHA (forced redeploy / rebuilt binary).
+CONFIG_IOTMER_OTA_APPLY_EVEN_IF_SAME_SHA=y
+
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y
+
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
+
+# Set in menuconfig before flashing on the line (never commit production secrets).
+CONFIG_IOTMER_PROVISION_AUTH_CODE=""
+CONFIG_IOTMER_WORKSPACE_ID=""
+CONFIG_IOTMER_WORKSPACE_SLUG=""
+CONFIG_IOTMER_TEMPLATE_ID=""
+CONFIG_IOTMER_WIFI_SSID=""
+CONFIG_IOTMER_WIFI_PASSWORD=""

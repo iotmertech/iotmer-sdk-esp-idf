@@ -16,12 +16,15 @@ For authoritative behaviour details, use **[docs.iotmer.com](https://docs.iotmer
 
 | Order | Path | Notes |
 |-------|------|-------|
-| 1 | [`README.md`](README.md) | Install, Component Manager, `EXTRA_COMPONENT_DIRS` |
-| 2 | [`components/iotmer/README.md`](components/iotmer/README.md) | Component overview, example index |
-| 3 | [`examples/README.md`](examples/README.md) | `idf.py`, `menuconfig`, directory → role table, troubleshooting |
-| 4 | [`components/iotmer/Kconfig.projbuild`](components/iotmer/Kconfig.projbuild) | Core `CONFIG_IOTMER_*` symbols |
-| 5 | [`components/iotmer_ble/Kconfig.projbuild`](components/iotmer_ble/Kconfig.projbuild) | BLE JSON channel `CONFIG_IOTMER_BLE_*` (when component is in the project) |
-| 6 | [`docs/sdk/esp-idf/ble-json-provisioning.md`](docs/sdk/esp-idf/ble-json-provisioning.md) | BLE JSON provisioning contract (English scaffold) |
+| 1 | [`README.md`](README.md) | Install, Component Manager, `tools/iotmer.py create-app` |
+| 2 | [`tools/README.md`](tools/README.md) | `create-app`, `doctor` for custom hardware |
+| 3 | [`components/iotmer/README.md`](components/iotmer/README.md) | Component overview, example index |
+| 4 | [`examples/README.md`](examples/README.md) | `idf.py`, menuconfig, factory/field, troubleshooting |
+| 5 | [`components/iotmer/Kconfig.projbuild`](components/iotmer/Kconfig.projbuild) | Core `CONFIG_IOTMER_*` symbols |
+| 6 | [`components/iotmer_ble/Kconfig.projbuild`](components/iotmer_ble/Kconfig.projbuild) | BLE JSON channel `CONFIG_IOTMER_BLE_*` (when component is in the project) |
+| 7 | [`docs/sdk/esp-idf/custom-hardware.md`](docs/sdk/esp-idf/custom-hardware.md) | Custom PCB integration checklist |
+| 8 | [`docs/sdk/esp-idf/factory-field-profiles.md`](docs/sdk/esp-idf/factory-field-profiles.md) | Factory vs field firmware |
+| 9 | [`docs/sdk/esp-idf/ble-json-provisioning.md`](docs/sdk/esp-idf/ble-json-provisioning.md) | BLE JSON provisioning contract (English scaffold) |
 
 When changing code, cross-check the relevant example’s `sdkconfig.defaults`, the “SDK layout” section in `examples/README.md`, and signatures in `iotmer_client.h`.
 
@@ -29,6 +32,7 @@ When changing code, cross-check the relevant example’s `sdkconfig.defaults`, t
 
 - `components/iotmer/` — shipping component: `*.c`, `include/`, `CMakeLists.txt`, `idf_component.yml`, Kconfig.
 - `components/iotmer_ble/` — optional BLE JSON channel (NimBLE); `README.md`, `Kconfig.projbuild`, public `iotmer_ble.h`.
+- `tools/` — `iotmer.py` (`create-app`, `doctor`) and `templates/app/` scaffold for custom hardware.
 - `examples/*` — reference apps; treat each as its own ESP-IDF project root.
 - `docs/` — English Markdown scaffold; keep aligned with the published site **[docs.iotmer.com](https://docs.iotmer.com/)** when behaviour is documented there.
 
@@ -58,6 +62,7 @@ When changing code, cross-check the relevant example’s `sdkconfig.defaults`, t
 ## Build and verification
 
 - When practical, verify in the affected example directory with `idf.py set-target <chip>` and `idf.py build` (ESP-IDF environment must be sourced via `export` / `export.ps1`).
+- CI (`.github/workflows/ci.yml`): `iotmer doctor` on examples, ESP-IDF build matrix, `create-app` scaffold build. Local: `bash tools/ci/build_matrix.sh`.
 - Per-example `dependencies.lock` should stay consistent with `managed_components` if you bump managed dependency versions—update the lock file accordingly.
 
 ## License
