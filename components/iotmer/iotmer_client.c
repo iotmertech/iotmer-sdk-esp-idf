@@ -13,6 +13,7 @@
  */
 
 #include <errno.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -276,7 +277,7 @@ static void firmware_poll_task(void *arg)
             mismatch_round++;
             run_provision = (mismatch_round % 5u == 1u);
             if (!run_provision) {
-                ESP_LOGI(TAG, "firmware poll: OTA-only retry (mismatch round %u)", mismatch_round);
+                ESP_LOGI(TAG, "firmware poll: OTA-only retry (mismatch round %" PRIu32 ")", mismatch_round);
             }
         } else {
             mismatch_round = 0;
@@ -543,10 +544,10 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                                ? client->mqtt_auth_backoff_ms
                                : (uint32_t)client->cfg.reconnect_delay_ms;
         if (client->mqtt_auth_backoff_ms != 0U) {
-            ESP_LOGW(TAG, "MQTT disconnected — reconnecting in %u ms (auth-failure backoff)",
+            ESP_LOGW(TAG, "MQTT disconnected — reconnecting in %" PRIu32 " ms (auth-failure backoff)",
                      wait_ms);
         } else {
-            ESP_LOGW(TAG, "MQTT disconnected — reconnecting in %u ms", wait_ms);
+            ESP_LOGW(TAG, "MQTT disconnected — reconnecting in %" PRIu32 " ms", wait_ms);
         }
         if (client->reconnect_timer) {
             (void)esp_timer_stop((esp_timer_handle_t)client->reconnect_timer);
@@ -641,7 +642,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                     }
                     client->mqtt_auth_backoff_ms = b;
                     ESP_LOGW(TAG,
-                             "MQTT CONNACK auth failure (rc=%d) — next reconnect uses %u ms backoff "
+                             "MQTT CONNACK auth failure (rc=%d) — next reconnect uses %" PRIu32 " ms backoff "
                              "(refresh NVS credentials via HTTPS provision if this persists)",
                              rc, b);
                     if (client->cfg.on_auth_rejected) {
@@ -692,7 +693,7 @@ static void reconnect_timer_cb(void *arg)
             uint32_t wait_ms = client->cfg.reconnect_delay_ms > 0
                                    ? (uint32_t)client->cfg.reconnect_delay_ms
                                    : 5000U;
-            ESP_LOGW(TAG, "hard reconnect: restart failed (%s) — retrying in %u ms",
+            ESP_LOGW(TAG, "hard reconnect: restart failed (%s) — retrying in %" PRIu32 " ms",
                      esp_err_to_name(e), wait_ms);
             (void)esp_timer_start_once((esp_timer_handle_t)client->reconnect_timer,
                                        (uint64_t)wait_ms * 1000ULL);
@@ -876,8 +877,8 @@ static esp_err_t mqtt_client_start(iotmer_client_t *client)
             largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
         }
         if (largest < (size_t)CONFIG_IOTMER_TLS_MIN_HEAP_GUARD) {
-            ESP_LOGE(TAG, "TLS heap guard: largest free internal block %u < %d — aborting connect",
-                     (unsigned)largest, CONFIG_IOTMER_TLS_MIN_HEAP_GUARD);
+            ESP_LOGE(TAG, "TLS heap guard: largest free internal block %zu < %d — aborting connect",
+                     largest, CONFIG_IOTMER_TLS_MIN_HEAP_GUARD);
             tls_hook_release(client);
             return ESP_ERR_NO_MEM;
         }
@@ -1042,7 +1043,7 @@ esp_err_t iotmer_connect(iotmer_client_t *client)
         uint32_t period = phantom_check_period_ms(client->cfg.phantom_timeout_ms);
         (void)esp_timer_start_periodic((esp_timer_handle_t)client->phantom_timer,
                                        (uint64_t)period * 1000ULL);
-        ESP_LOGI(TAG, "phantom watchdog armed (timeout=%u ms, check=%u ms)",
+        ESP_LOGI(TAG, "phantom watchdog armed (timeout=%" PRIu32 " ms, check=%" PRIu32 " ms)",
                  client->cfg.phantom_timeout_ms, period);
     }
     return ESP_OK;
@@ -1119,7 +1120,7 @@ void iotmer_finalize_provisioning(iotmer_client_t *client, bool reboot, uint32_t
         iotmer_disconnect(client);
     }
     if (reboot) {
-        ESP_LOGI(TAG, "finalize_provisioning: rebooting in %u ms", reboot_delay_ms);
+        ESP_LOGI(TAG, "finalize_provisioning: rebooting in %" PRIu32 " ms", reboot_delay_ms);
         if (reboot_delay_ms > 0U) {
             vTaskDelay(pdMS_TO_TICKS(reboot_delay_ms));
         }

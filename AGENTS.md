@@ -61,8 +61,9 @@ When changing code, cross-check the relevant example’s `sdkconfig.defaults`, t
 
 ## Build and verification
 
-- When practical, verify in the affected example directory with `idf.py set-target <chip>` and `idf.py build` (ESP-IDF environment must be sourced via `export` / `export.ps1`).
-- CI (`.github/workflows/ci.yml`): `iotmer doctor` on examples, ESP-IDF build matrix, `create-app` scaffold build. Local: `bash tools/ci/build_matrix.sh`.
+- When practical, verify in the affected example directory with `idf.py set-target <chip>` and `idf.py build` (ESP-IDF ≥ 6.0; source `export.sh` / `export.ps1`).
+- CI (`.github/workflows/ci.yml`): `iotmer doctor` on examples, ESP-IDF v6.0 build matrix, `create-app` scaffold build in `$RUNNER_TEMP` (nothing written under repo root). Local cleanup: `bash tools/ci/clean.sh`.
+- **Never run `idf.py build` from the repository root** — only under `examples/*` or an external `create-app` project.
 - Per-example `dependencies.lock` should stay consistent with `managed_components` if you bump managed dependency versions—update the lock file accordingly.
 
 ## License

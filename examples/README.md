@@ -25,13 +25,21 @@ Details: [`docs/sdk/esp-idf/factory-field-profiles.md`](../docs/sdk/esp-idf/fact
 
 ## Build
 
+**Do not run `idf.py` from the repository root** — there is no firmware project there. Always `cd` into an example:
+
 ```bash
 cd examples/02_telemetry
 idf.py set-target esp32c3
 idf.py build flash monitor
 ```
 
-After clone, run `set-target` once — `build/`, `managed_components/`, and `sdkconfig` are not committed.
+After clone, run `set-target` once — `build/`, `managed_components/`, and `sdkconfig` are gitignored and must not be committed.
+
+Clean accidental artifacts:
+
+```bash
+bash ../tools/ci/clean.sh   # from examples/, or from repo root
+```
 
 ## Configure
 

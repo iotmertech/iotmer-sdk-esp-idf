@@ -23,5 +23,5 @@ files:
     - "*.c"
     - "include/**"
 dependencies:
-  idf: ">=5.0.0"
+  idf: ">=6.0.0"
 

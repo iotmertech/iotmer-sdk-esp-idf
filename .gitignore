@@ -1,15 +1,22 @@
-# ESP-IDF build outputs
+# ESP-IDF build outputs (never commit)
 build/
 **/build/
 
-# Component Manager (recreated by `idf.py build`)
+# Component Manager (recreated by idf.py build / update-dependencies)
 **/managed_components/
+managed_components/
 
-# Local sdkconfig (per-example project roots; use sdkconfig.defaults; regenerate with set-target / build)
-**/examples/**/sdkconfig
+# sdkconfig is per-project local state — use sdkconfig.defaults in git
+/sdkconfig
+/sdkconfig.old
+**/sdkconfig
+!**/sdkconfig.defaults
+!**/sdkconfig.defaults.*
+
+# Lock files: only inside example projects (not repo root)
+/dependencies.lock
 
 # Backups
-**/sdkconfig.old
 *.bak
 
 # CMake / tooling
@@ -68,7 +75,7 @@ docs/
 components/iotmer/dist/
 components/iotmer_ble/dist/
 
-# CI scaffold output (create-app smoke builds)
+# Local create-app / CI scratch (never commit generated firmware trees)
 ci-scratch/
 
 .vscode/

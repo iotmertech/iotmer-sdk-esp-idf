@@ -8,7 +8,7 @@
  * This component provides a small, general-purpose BLE transport for UTF-8 JSON payloads.
  * Applications can implement Wi-Fi provisioning or other device commands on top.
  *
- * Requires: ESP-IDF >= 5.0, NimBLE enabled, `CONFIG_IOTMER_BLE=y`.
+ * Requires: ESP-IDF >= 6.0, NimBLE enabled, CONFIG_IOTMER_BLE=y.
  */
 
 #include <stdbool.h>

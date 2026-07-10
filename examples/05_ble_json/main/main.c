@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <string.h>
 
 #include "cJSON.h"
@@ -252,7 +253,7 @@ static void on_ble_disconnect(void *user_ctx, int reason)
 static void on_ble_mtu(void *user_ctx, uint16_t mtu)
 {
     (void)user_ctx;
-    ESP_LOGI(TAG, "BLE ATT MTU=%u", (unsigned)mtu);
+    ESP_LOGI(TAG, "BLE ATT MTU=%" PRIu16, mtu);
 }
 
 void app_main(void)

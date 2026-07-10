@@ -23,7 +23,7 @@ idf.py update-dependencies
 | Core SDK | [`iotmertech/iotmer`](https://components.espressif.com/components/iotmertech/iotmer) |
 | BLE JSON (optional) | [`iotmertech/iotmer_ble`](https://components.espressif.com/components/iotmertech/iotmer_ble) |
 
-**Requires:** ESP-IDF ≥ 5.x · ESP32 family · TLS via `esp_crt_bundle_attach`
+**Requires:** ESP-IDF ≥ 6.x · ESP32 family · TLS via `esp_crt_bundle_attach`
 
 ## Minimal example
 
@@ -53,8 +53,8 @@ See [`tools/README.md`](tools/README.md) and [`docs/sdk/esp-idf/custom-hardware.
 
 | Path | Contents |
 |------|----------|
-| [`tools/`](tools/README.md) | `create-app` scaffold, `doctor` sdkconfig checks |
-| [`examples/`](examples/README.md) | Reference firmware (provision, telemetry, config, BLE) |
+| [`tools/`](tools/README.md) | `create-app` scaffold, `doctor` sdkconfig checks, `ci/clean.sh` |
+| [`examples/`](examples/README.md) | Reference firmware — **build only inside an example directory** |
 | [`components/iotmer/`](components/iotmer/README.md) | Core component |
 | [`components/iotmer_ble/`](components/iotmer_ble/README.md) | Optional BLE transport |
 | [`docs/`](docs/) | Markdown source for [docs.iotmer.com](https://docs.iotmer.com/) |

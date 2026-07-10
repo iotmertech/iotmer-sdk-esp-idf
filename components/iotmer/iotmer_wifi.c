@@ -17,6 +17,7 @@
  * tolerates ESP_ERR_INVALID_STATE (already initialised).
  */
 
+#include <inttypes.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
@@ -84,8 +85,8 @@ static void schedule_backoff_reconnect(void)
     }
     (void)esp_timer_stop(s_backoff_timer);
     if (esp_timer_start_once(s_backoff_timer, (uint64_t)s_backoff_ms * 1000ULL) == ESP_OK) {
-        ESP_LOGW(TAG, "WiFi still down — next reconnect attempt in %u ms",
-                 (unsigned)s_backoff_ms);
+        ESP_LOGW(TAG, "WiFi still down — next reconnect attempt in %" PRIu32 " ms",
+                 s_backoff_ms);
     }
 }
 

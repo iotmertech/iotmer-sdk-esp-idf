@@ -77,7 +77,7 @@ jobs:
       - name: ESP-IDF build
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.4
+          esp_idf_version: v6.0
           target: ${{ matrix.target }}
           path: ${{ matrix.example }}
 
@@ -95,11 +95,11 @@ jobs:
       - name: create-app (local SDK deps)
         run: |
           python tools/iotmer.py create-app ci-scaffold \
-            --deps local --sdk-root . -o ci-scratch --chip esp32c3 --profile field
+            --deps local --sdk-root . -o "${RUNNER_TEMP}/iotmer-ci" --chip esp32c3 --profile field
 
       - name: ESP-IDF build
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.4
+          esp_idf_version: v6.0
           target: esp32c3
-          path: ci-scratch/ci-scaffold
+          path: ${{ runner.temp }}/iotmer-ci/ci-scaffold

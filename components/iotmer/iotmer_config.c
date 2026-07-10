@@ -3,6 +3,7 @@
  */
 
 #include <ctype.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -753,7 +754,7 @@ static esp_err_t handle_resp_chunked(iotmer_config_ctx_t *ctx, cJSON *root,
 
     bool is_new_chunk = chunk_mark(ctx, idx);
     if (!is_new_chunk) {
-        ESP_LOGW(TAG, "duplicate chunk_index=%u (ignored)", (unsigned)idx);
+        ESP_LOGW(TAG, "duplicate chunk_index=%" PRIu32 " (ignored)", idx);
     } else {
         /* Place by index, not arrival order — tolerates out-of-order delivery. */
         const size_t off = (size_t)idx * (size_t)ctx->chunk_bytes;

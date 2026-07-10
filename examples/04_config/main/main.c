@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -26,8 +27,8 @@ static void on_cfg_event(void *user, const iotmer_config_event_t *ev)
     (void)user;
     switch (ev->type) {
     case IOTMER_CONFIG_EV_META:
-        ESP_LOGI(TAG, "META version=%u sha=%s bytes_hint=%u", (unsigned)ev->u.meta.version,
-                 ev->u.meta.sha256_hex, (unsigned)ev->u.meta.bytes_hint);
+        ESP_LOGI(TAG, "META version=%" PRIu32 " sha=%s bytes_hint=%" PRIu32, ev->u.meta.version,
+                 ev->u.meta.sha256_hex, ev->u.meta.bytes_hint);
         if (s_cfg.have_valid && s_cfg.have_version == ev->u.meta.version &&
             strncmp(s_cfg.have_sha_hex, ev->u.meta.sha256_hex, sizeof(s_cfg.have_sha_hex)) == 0) {
             ESP_LOGD(TAG, "META matches applied config — skip config/get");
@@ -44,9 +45,9 @@ static void on_cfg_event(void *user, const iotmer_config_event_t *ev)
         }
         break;
     case IOTMER_CONFIG_EV_CONFIG_JSON:
-        ESP_LOGI(TAG, "CONFIG ok rid=%s ver=%u sha=%s json_len=%u", ev->rid,
-                 (unsigned)ev->u.config.version, ev->u.config.sha256_hex,
-                 (unsigned)ev->u.config.json_len);
+        ESP_LOGI(TAG, "CONFIG ok rid=%s ver=%" PRIu32 " sha=%s json_len=%" PRIu32, ev->rid,
+                 ev->u.config.version, ev->u.config.sha256_hex,
+                 ev->u.config.json_len);
         if (ev->u.config.json_len > 0U) {
             int preview = (int)ev->u.config.json_len;
             if (preview > 200) {

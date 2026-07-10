@@ -117,13 +117,13 @@ def cmd_create_app(args: argparse.Namespace) -> int:
         component_yml = (
             "# iotmer is resolved via EXTRA_COMPONENT_DIRS in CMakeLists.txt (local SDK checkout).\n"
             "dependencies:\n"
-            "  idf: \">=5.0.0\"\n"
+            "  idf: \">=6.0.0\"\n"
         )
     else:
         extra_cmake = ""
         component_yml = (
             "dependencies:\n"
-            "  idf: \">=5.0.0\"\n"
+            "  idf: \">=6.0.0\"\n"
             "  iotmertech/iotmer: \"*\"\n"
         )
 

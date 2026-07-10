@@ -28,7 +28,8 @@ idf.py build
 ### Local SDK checkout
 
 ```bash
-python tools/iotmer.py create-app lab-test --deps local --sdk-root .
+# Prefer outside this repo to avoid local build/ noise:
+python tools/iotmer.py create-app lab-test --deps local --sdk-root /path/to/iotmer-sdk-esp-idf -o ~/firmware
 ```
 
 ## `doctor`
@@ -49,16 +50,25 @@ Exit code `1` when errors are found; warnings do not fail the command.
 | Job | What |
 |-----|------|
 | **doctor** | `iotmer doctor` on all `examples/0*` + `create-app` smoke |
-| **build-examples** | Matrix: examples × `esp32` / `esp32c3` / `esp32s3` (ESP-IDF v5.4) |
-| **build-scaffold** | `create-app` + `idf.py build` on `esp32c3` |
+| **build-examples** | Matrix: examples × `esp32` / `esp32c3` / `esp32s3` (ESP-IDF v6.0) |
+| **build-scaffold** | `create-app` in `$RUNNER_TEMP` + `idf.py build` (nothing under repo tree) |
 
 Reproduce locally (doctor only without ESP-IDF):
 
 ```bash
 bash tools/ci/build_matrix.sh
-bash tools/ci/build_matrix.sh --build   # after sourcing export.sh
+bash tools/ci/build_matrix.sh --build   # after sourcing export.sh; per example directory
 ```
 
+Remove committed build artifacts from the SDK repo:
+
+```bash
+bash tools/ci/clean.sh
+```
+
+**Tip:** Prefer `create-app -o ~/firmware` so generated `build/` trees stay outside this repository.
+
+## Documentation
 
 - [Custom hardware integration](../docs/sdk/esp-idf/custom-hardware.md)
 - [Factory vs field profiles](../docs/sdk/esp-idf/factory-field-profiles.md)

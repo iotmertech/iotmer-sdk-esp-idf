@@ -19,7 +19,7 @@ idf.py update-dependencies
 
 Registry: [`iotmertech/iotmer`](https://components.espressif.com/components/iotmertech/iotmer)
 
-**Requires:** ESP-IDF ≥ 5.0 · ESP32 family
+**Requires:** ESP-IDF ≥ 6.0 · ESP32 family
 
 ## Quick start
 
