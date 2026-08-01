@@ -4,6 +4,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-01
+
+### Fixed
+
+**iotmer**
+
+- **Config META use-after-free:** `handle_meta` copied `sha256` from `cJSON` `valuestring` after `cJSON_Delete`, corrupting the hash (heap garbage, `len=64` but non-hex) and causing the device to ignore `config/meta` / skip sync.
+
 ## [0.3.0] - 2026-08-01
 
 ### Added

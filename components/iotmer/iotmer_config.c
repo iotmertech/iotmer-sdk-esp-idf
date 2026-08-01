@@ -645,19 +645,20 @@ static esp_err_t handle_meta(iotmer_config_ctx_t *ctx, iotmer_client_t *client,
         return ESP_FAIL;
     }
     uint32_t ver = (uint32_t)jv->valuedouble;
-    const char *sha = js->valuestring;
     size_t bytes_hint = 0;
     if (cJSON_IsNumber(jb)) {
         bytes_hint = (size_t)jb->valuedouble;
     }
-    cJSON_Delete(root);
 
+    /* Copy sha before cJSON_Delete — valuestring is freed with the tree. */
     iotmer_config_event_t ev;
     memset(&ev, 0, sizeof(ev));
     ev.type = IOTMER_CONFIG_EV_META;
     ev.u.meta.version = ver;
-    strncpy(ev.u.meta.sha256_hex, sha, sizeof(ev.u.meta.sha256_hex) - 1U);
+    strncpy(ev.u.meta.sha256_hex, js->valuestring, sizeof(ev.u.meta.sha256_hex) - 1U);
     ev.u.meta.bytes_hint = bytes_hint;
+    cJSON_Delete(root);
+
     return config_emit_event(ctx, cb, user_ctx, &ev, false);
 }
 
