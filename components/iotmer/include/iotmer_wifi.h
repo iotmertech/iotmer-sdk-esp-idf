@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "esp_err.h"
@@ -32,6 +33,13 @@ esp_err_t iotmer_wifi_clear_credentials(void);
  * Uses NVS first, then falls back to Kconfig values.
  */
 esp_err_t iotmer_wifi_reconnect(void);
+
+/**
+ * Hold WiFi reconnect (fast retry + backoff) while BLE operational session is active.
+ * Prevents STA coexist storms from fighting BLE notifies / relay confirm.
+ * On release, schedules backoff reconnect if still without IP.
+ */
+void iotmer_wifi_set_reconnect_hold(bool hold);
 
 #ifdef __cplusplus
 }

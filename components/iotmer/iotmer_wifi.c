@@ -18,6 +18,7 @@
  */
 
 #include <inttypes.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
@@ -57,10 +58,15 @@ static bool                s_started;   /* esp_wifi_start() done (STA_START seen
 static bool                s_connected; /* IP acquired; cleared on STA_DISCONNECTED */
 static esp_timer_handle_t  s_backoff_timer;
 static uint32_t            s_backoff_ms;
+static bool                s_reconnect_hold;
 
 static void wifi_backoff_timer_cb(void *arg)
 {
     (void)arg;
+    if (s_reconnect_hold) {
+        ESP_LOGI(TAG, "WiFi backoff skip — reconnect held");
+        return;
+    }
     ESP_LOGI(TAG, "WiFi backoff retry — attempting reconnect");
     (void)esp_wifi_connect();
 }
@@ -75,6 +81,10 @@ static void schedule_backoff_reconnect(void)
     if (!s_backoff_timer) {
         return;
     }
+    if (s_reconnect_hold) {
+        ESP_LOGW(TAG, "WiFi backoff deferred — reconnect held");
+        return;
+    }
     if (s_backoff_ms == 0U) {
         s_backoff_ms = WIFI_BACKOFF_MIN_MS;
     } else if (s_backoff_ms < WIFI_BACKOFF_MAX_MS) {
@@ -87,6 +97,25 @@ static void schedule_backoff_reconnect(void)
     if (esp_timer_start_once(s_backoff_timer, (uint64_t)s_backoff_ms * 1000ULL) == ESP_OK) {
         ESP_LOGW(TAG, "WiFi still down — next reconnect attempt in %" PRIu32 " ms",
                  s_backoff_ms);
+    }
+}
+
+void iotmer_wifi_set_reconnect_hold(bool hold)
+{
+    if (s_reconnect_hold == hold) {
+        return;
+    }
+    s_reconnect_hold = hold;
+    if (hold) {
+        if (s_backoff_timer) {
+            (void)esp_timer_stop(s_backoff_timer);
+        }
+        ESP_LOGI(TAG, "WiFi reconnect HOLD");
+        return;
+    }
+    ESP_LOGI(TAG, "WiFi reconnect RELEASE");
+    if (!s_connected) {
+        schedule_backoff_reconnect();
     }
 }
 
@@ -263,7 +292,10 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     } else if (event_base == WIFI_EVENT &&
                event_id == WIFI_EVENT_STA_DISCONNECTED) {
         s_connected = false;
-        if (s_retry_num < WIFI_FAST_RETRY_MAX) {
+        if (s_reconnect_hold) {
+            ESP_LOGW(TAG, "WiFi disconnected — reconnect held (no STA retry)");
+            xEventGroupSetBits(s_event_group, WIFI_FAIL_BIT);
+        } else if (s_retry_num < WIFI_FAST_RETRY_MAX) {
             s_retry_num++;
             ESP_LOGW(TAG, "WiFi disconnected, retry %d/%d",
                      s_retry_num, WIFI_FAST_RETRY_MAX);

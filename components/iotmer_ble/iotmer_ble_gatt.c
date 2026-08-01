@@ -150,14 +150,13 @@ esp_err_t iotmer_ble_gatt_set_tx_value(const uint8_t *data, uint16_t len)
     ble_hs_lock();
     memcpy(s_gatt.last_tx, data, len);
     s_gatt.last_tx_len = len;
-    const uint16_t tx_handle = s_gatt.tx_val_handle;
     ble_hs_unlock();
 
-    /* Public NimBLE API — takes the host lock itself; keep it outside ours. */
-    if (tx_handle != 0) {
-        ble_gatts_chr_updated(tx_handle);
-    }
-
+    /*
+     * Notify YOK — iotmer_ble_send_json ayrıca ble_gatts_notify_custom çağırır.
+     * Burada ble_gatts_chr_updated() çift GATT notify üretiyordu (mobil cmd.ack
+     * timeout / JSON birleştirme bozulması).
+     */
     return ESP_OK;
 }
 

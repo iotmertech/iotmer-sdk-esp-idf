@@ -107,8 +107,8 @@ static esp_err_t http_post_json(const char *url, const char *auth_code,
                       "IOTMER_PROVISION_JSON_MAX / buffer in http_post_json caller)",
                  total, (long long)content_len);
     } else if ((size_t)total >= resp_len - 1) {
-        ESP_LOGW(TAG, "provision response filled buffer (%zu bytes) — body may be truncated",
-                 resp_len);
+        ESP_LOGW(TAG, "provision response filled buffer (%u bytes) — body may be truncated",
+                 (unsigned)resp_len);
     }
 
     err = ESP_OK;
@@ -293,8 +293,8 @@ esp_err_t iotmer_provision(iotmer_creds_t *out, bool *https_performed)
 
     cJSON *jr = cJSON_Parse(s_provision_json_resp);
     if (!jr) {
-        ESP_LOGE(TAG, "JSON parse failed (len=%zu first_128=%.128s)",
-                 strlen(s_provision_json_resp), s_provision_json_resp);
+        ESP_LOGE(TAG, "JSON parse failed (len=%u first_128=%.128s)",
+                 (unsigned)strlen(s_provision_json_resp), s_provision_json_resp);
         *out = backup;
         return ESP_ERR_INVALID_RESPONSE;
     }
@@ -336,14 +336,14 @@ esp_err_t iotmer_provision(iotmer_creds_t *out, bool *https_performed)
                                      sizeof(out->firmware_url));
     }
     if (fw_url_e != ESP_OK && fw_url_e != ESP_ERR_NOT_FOUND) {
-        ESP_LOGW(TAG, "firmware_url parse: %s (max len %zu)", esp_err_to_name(fw_url_e),
-                 sizeof(out->firmware_url) - 1u);
+        ESP_LOGW(TAG, "firmware_url parse: %s (max len %u)", esp_err_to_name(fw_url_e),
+                 (unsigned)(sizeof(out->firmware_url) - 1u));
     }
     if (fw_url_e == ESP_ERR_NOT_FOUND || fw_sha_e == ESP_ERR_NOT_FOUND) {
         ESP_LOGW(TAG, "provision JSON has no firmware_url and/or firmware_checksum_sha256 "
                       "(OTA will not run until the backend includes them)");
-        ESP_LOGW(TAG, "provision body len=%zu prefix=%.400s", strlen(s_provision_json_resp),
-                 s_provision_json_resp);
+        ESP_LOGW(TAG, "provision body len=%u prefix=%.400s",
+                 (unsigned)strlen(s_provision_json_resp), s_provision_json_resp);
     } else if (inner != NULL &&
                (cJSON_GetObjectItemCaseSensitive(jr, "firmware_url") == NULL ||
                 cJSON_GetObjectItemCaseSensitive(jr, "firmware_checksum_sha256") == NULL)) {
@@ -403,11 +403,13 @@ esp_err_t iotmer_provision(iotmer_creds_t *out, bool *https_performed)
         const bool had_pw = backup.mqtt_password[0] != '\0';
         const bool pw_changed =
             !had_pw || strcmp(backup.mqtt_password, out->mqtt_password) != 0;
+        /* newlib-nano %zu desteklemez → argüman kayması + Load access fault. */
         ESP_LOGI(TAG,
                  "MQTT (from provision): host=%s port=%d tls=%s username=%s "
-                 "password_len=%zu password_%s",
+                 "password_len=%u password_%s",
                  out->mqtt_host, out->mqtt_port, out->mqtt_tls ? "yes" : "no",
-                 out->mqtt_username, pwlen, pw_changed ? "changed_or_new" : "same_as_before");
+                 out->mqtt_username, (unsigned)pwlen,
+                 pw_changed ? "changed_or_new" : "same_as_before");
     }
     /* Never log the token; bind-claim / device-auth need NVS "dht" or a new JSON value. */
     ESP_LOGI(TAG, "device_http_token: %s", out->device_http_token[0] != '\0' ? "set" : "absent");
