@@ -66,7 +66,7 @@ CI: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — `iotmer doctor`, 
 ## Documentation
 
 - **Platform** (console, MQTT, REST): [docs.iotmer.com](https://docs.iotmer.com/)
-- **ESP-IDF integration**: [docs.iotmer.com/docs/sdk/esp-idf/intro](https://docs.iotmer.com/docs/sdk/esp-idf/intro)
+- **ESP-IDF integration**: [docs.iotmer.com/docs/sdk/esp-idf/](https://docs.iotmer.com/docs/sdk/esp-idf/)
 
 ## License
 

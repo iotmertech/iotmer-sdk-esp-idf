@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "esp_crt_bundle.h"
 #include "esp_err.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
@@ -11,6 +10,7 @@
 #include "sdkconfig.h"
 
 #include "iotmer_client.h"
+#include "iotmer_internal.h"
 
 #define TAG "iotmer_device_auth"
 
@@ -44,8 +44,8 @@ static esp_err_t http_post_bearer_json(const char *url, const char *bearer, cons
         .timeout_ms     = CONFIG_IOTMER_PROVISION_TIMEOUT_MS,
         .buffer_size    = 4096,
         .buffer_size_tx = 4096,
-        .crt_bundle_attach = esp_crt_bundle_attach,
     };
+    iotmer_tls_apply_http_client_config(&cfg);
 
     esp_http_client_handle_t c = esp_http_client_init(&cfg);
     if (!c) {

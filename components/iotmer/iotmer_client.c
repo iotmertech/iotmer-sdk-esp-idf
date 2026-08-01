@@ -17,7 +17,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "esp_crt_bundle.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -786,6 +785,10 @@ esp_err_t iotmer_init(iotmer_client_t *client, const iotmer_config_t *cfg)
     memset(client, 0, sizeof(*client));
     client->cfg = *cfg;
 
+    if (client->cfg.ca_cert_pem && client->cfg.ca_cert_pem[0]) {
+        iotmer_tls_set_ca_cert_pem(client->cfg.ca_cert_pem);
+    }
+
     /* One-time ~80 B allocation; guards creds against the firmware poll writer. */
     if (!s_creds_lock) {
         s_creds_lock = xSemaphoreCreateMutex();
@@ -944,8 +947,7 @@ static esp_err_t mqtt_client_start(iotmer_client_t *client)
     }
 
     if (client->cfg.tls) {
-        /* Use the bundled Mozilla CA root store; no custom cert needed. */
-        mcfg.broker.verification.crt_bundle_attach = esp_crt_bundle_attach;
+        iotmer_tls_apply_mqtt_verification(&mcfg);
     }
 
     esp_mqtt_client_handle_t h = esp_mqtt_client_init(&mcfg);

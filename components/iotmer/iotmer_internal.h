@@ -4,12 +4,20 @@
 #include <stddef.h>
 
 #include "esp_err.h"
+#include "esp_http_client.h"
+#include "mqtt_client.h"
 
 #include "iotmer_client.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/** Apply current trust store (pinned PEM or crt_bundle) to an HTTP client config. */
+void iotmer_tls_apply_http_client_config(esp_http_client_config_t *cfg);
+
+/** Apply current trust store to esp_mqtt broker.verification. */
+void iotmer_tls_apply_mqtt_verification(esp_mqtt_client_config_t *mcfg);
 
 esp_err_t iotmer_wifi_connect(void);
 

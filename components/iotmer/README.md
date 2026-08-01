@@ -21,6 +21,39 @@ Registry: [`iotmertech/iotmer`](https://components.espressif.com/components/iotm
 
 **Requires:** ESP-IDF ≥ 6.0 · ESP32 family
 
+## TLS trust store
+
+By default the SDK verifies MQTT and HTTPS peers with the ESP-IDF Mozilla CA bundle (`esp_crt_bundle_attach`).
+
+IOTMER production hosts typically use **two different CA families**:
+
+| Path | Default / typical host | CA family (today) |
+|------|------------------------|-------------------|
+| MQTT | `mqtt*.iotmer.cloud:8883` (from provision JSON) | Let’s Encrypt → **ISRG Root X1 / X2** |
+| HTTPS provision / bind-claim | `CONFIG_IOTMER_PROVISION_API_URL` → `https://console.iotmer.com/api/v1` | Cloudflare → **Google Trust Services (e.g. GTS R4)** |
+| HTTPS OTA | e.g. `firmwares.iotmer.com` (Cloudflare) | Same as console → **GTS R4** |
+
+For constrained devices (e.g. ESP32-C3 + BLE), pin a small concatenated PEM of **both** roots (AWS IoT-style), not the server leaf:
+
+```c
+/* Flash: ISRG Root X1 + X2 + GTS Root R4 (NUL-terminated concat). */
+extern const char iotmer_ca_store_pem[] asm("_binary_iotmer_ca_store_pem_start");
+
+iotmer_config_t cfg = IOTMER_CONFIG_DEFAULT();
+cfg.ca_cert_pem = iotmer_ca_store_pem;
+iotmer_init(&client, &cfg);
+```
+
+Or call `iotmer_tls_set_ca_cert_pem()` **before** the first provision/OTA if those run without `iotmer_init`.
+
+Rules:
+
+- Embed **root** CAs only (not the server leaf). Leaf renewal must not require a firmware flash.
+- Keep PEMs valid for the process lifetime (typically `embed_txtfiles` / `.rodata`).
+- When pinned PEM is set, the bundle is **not** used for IoTMER MQTT/HTTPS paths.
+- If you later move API under `*.iotmer.cloud` on the same LE chain, you can drop GTS — until then keep both.
+- Plan OTA updates that can add a new root before rotating broker/API certificates.
+
 ## Quick start
 
 ```c

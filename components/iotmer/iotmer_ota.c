@@ -12,7 +12,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "esp_crt_bundle.h"
 #include "esp_err.h"
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
@@ -193,9 +192,9 @@ static esp_err_t https_ota_download_and_verify(const iotmer_creds_t *creds)
     esp_http_client_config_t http_cfg = {
         .url               = creds->firmware_url,
         .timeout_ms        = CONFIG_IOTMER_OTA_TIMEOUT_MS,
-        .crt_bundle_attach = esp_crt_bundle_attach,
         .buffer_size       = 4096,
     };
+    iotmer_tls_apply_http_client_config(&http_cfg);
 
     esp_https_ota_config_t ota_cfg = {
         .http_config = &http_cfg,

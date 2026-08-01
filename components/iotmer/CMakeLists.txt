@@ -11,6 +11,7 @@ idf_component_register(
         "iotmer_nvs.c"
         "iotmer_wifi.c"
         "iotmer_ota.c"
+        "iotmer_tls.c"
     INCLUDE_DIRS "include"
     REQUIRES esp_http_client esp_https_ota mqtt nvs_flash esp_wifi esp_event esp_netif esp-tls cjson app_update freertos mbedtls zlib
 )

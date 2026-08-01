@@ -54,7 +54,7 @@ When changing code, cross-check the relevant example’s `sdkconfig.defaults`, t
    Never commit real auth codes, passwords, or production certificates. Secrets in `sdkconfig` are excluded via `.gitignore`; examples should use `sdkconfig.defaults` or placeholders only.
 
 6. **TLS and certificates**  
-   Keep `esp_crt_bundle_attach` usage and certificate-chain expectations consistent with the root `README.md` and example `sdkconfig.defaults`. For TLS failures, consult the troubleshooting table in `examples/README.md` first.
+   Default remains `esp_crt_bundle_attach`. Optional pinned roots: `iotmer_tls_set_ca_cert_pem()` / `iotmer_config_t.ca_cert_pem` (see component README “TLS trust store”). Keep example `sdkconfig.defaults` bundle settings for apps that do not pin.
 
 7. **Scope**  
    Avoid drive-by refactors outside the requested task; match existing style (naming, error codes, logging).

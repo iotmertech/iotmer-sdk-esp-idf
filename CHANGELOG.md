@@ -4,6 +4,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-01
+
+### Added
+
+**iotmer**
+
+- **Pinned CA trust store:** `iotmer_tls_set_ca_cert_pem()` / `iotmer_config_t.ca_cert_pem` — optional PEM root list for MQTT + HTTPS (provision / OTA / device-auth). Default remains `esp_crt_bundle_attach` (backward compatible). See component README “TLS trust store”.
+
 ## [0.2.1] - 2026-07-04
 
 Reliability and memory-safety patch. Both `iotmer` and `iotmer_ble` → **0.2.1**.

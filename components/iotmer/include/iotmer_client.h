@@ -109,6 +109,16 @@ typedef struct {
      */
     void (*on_tls_acquire)(void *user_ctx);
     void (*on_tls_release)(void *user_ctx);
+
+    /**
+     * Optional pinned CA trust store (AWS IoT-style).
+     * When non-NULL and non-empty: MQTT + HTTPS (provision / OTA / device-auth) verify
+     * servers against this PEM (one or more concatenated root CAs, NUL-terminated).
+     * Pointer must remain valid for the process lifetime (typically flash/rodata).
+     * When NULL (default): use esp_crt_bundle_attach (Mozilla CA bundle).
+     * Equivalent to calling iotmer_tls_set_ca_cert_pem() before init; init applies this field.
+     */
+    const char *ca_cert_pem;
 } iotmer_config_t;
 
 #define IOTMER_CONFIG_DEFAULT()         \
@@ -119,7 +129,23 @@ typedef struct {
         .reconnect_delay_ms = 5000,     \
         .presence_lwt_enable = false,   \
         .phantom_timeout_ms = 0,        \
+        .ca_cert_pem = NULL,            \
     }
+
+/**
+ * Set the shared TLS trust store used by MQTT and HTTPS helpers.
+ * @param pem  Concatenated PEM root CA(s), or NULL / "" to restore esp_crt_bundle.
+ *             Must outlive all TLS connections (embed in flash).
+ * Call before the first HTTPS provision / OTA / MQTT connect when not using
+ * iotmer_config_t.ca_cert_pem.
+ */
+void iotmer_tls_set_ca_cert_pem(const char *pem);
+
+/** Current pinned PEM, or NULL when using the certificate bundle. */
+const char *iotmer_tls_get_ca_cert_pem(void);
+
+/** true when a non-empty pinned CA PEM is active. */
+bool iotmer_tls_using_pinned_ca(void);
 
 /** One registered subscription (see iotmer_subscribe). Internal use. */
 typedef struct {
