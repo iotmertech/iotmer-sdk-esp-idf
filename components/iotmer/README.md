@@ -1,6 +1,6 @@
 # iotmer
 
-ESP-IDF component for [IOTMER](https://iotmer.com): Wi‑Fi, HTTPS provisioning, NVS credentials, MQTT (TLS), telemetry, presence, and optional HTTPS OTA.
+ESP-IDF component for [IOTMER](https://iotmer.com): Wi‑Fi, HTTPS provisioning, NVS credentials, MQTT (TLS), telemetry, presence, and optional OTA (HTTP(S) auto-OTA and MQTT command).
 
 Optional BLE transport: [`iotmer_ble`](../iotmer_ble/) (`iotmer_ble.h`).
 
@@ -102,7 +102,7 @@ iotmer_subscribe(&client, "myws/mydev/custom/#", 1, on_custom, NULL);
 |---------|----------|
 | Wi‑Fi | Retries with 15–60 s backoff after fast retries exhaust. Never stops trying. |
 | MQTT fragments | Reassembles messages larger than `CONFIG_MQTT_BUFFER_SIZE` (cap: `IOTMER_MQTT_RX_ASSEMBLY_MAX`, default 8 KB). |
-| OTA | Verifies SHA256 against provision checksum before activating the image. |
+| OTA | HTTP(S) auto-OTA verifies SHA256 against the provision checksum before activating. MQTT `"cmd":"ota"` is application-owned (download still HTTP(S)). |
 | Presence | Retained JSON on `{workspace_slug}/{device_key}/presence`. LWT on unexpected disconnect. Graceful `iotmer_disconnect()` publishes retained offline when LWT is enabled. |
 | Outbox | QoS1+ queue capped at `IOTMER_MQTT_OUTBOX_LIMIT` (default 16 KB). |
 
