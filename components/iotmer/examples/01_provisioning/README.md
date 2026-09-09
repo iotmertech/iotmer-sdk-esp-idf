@@ -34,3 +34,5 @@ idf.py build flash monitor
 ```
 
 Example defaults enable `IOTMER_OTA_APPLY_EVEN_IF_SAME_SHA` for forced re-flash workflows.
+
+Auto-OTA uses stream GET (erase-before-TLS, Range resume). Keep `CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384` and a 180–300 s OTA timeout — see `sdkconfig.defaults` and [HTTPS OTA](https://docs.iotmer.com/docs/sdk/esp-idf/https-ota).

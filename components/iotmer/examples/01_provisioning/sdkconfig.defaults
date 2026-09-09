@@ -15,6 +15,13 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_ota_4mb.csv"
 # matching NVS applied SHA — same-hash rebuilds / forced redeploy still flash).
 CONFIG_IOTMER_OTA_APPLY_EVEN_IF_SAME_SHA=y
 
+# Cloudflare/R2 sends 16 KB TLS records. Smaller IN buffer → MBEDTLS_ERR_SSL_INVALID_RECORD
+# (-0x7200) around ~50 KB into the firmware GET on ESP32-C3.
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384
+
+# ~1–1.5 MB image on C3 + CDN: 120 s is often too short; 180–300 s recommended.
+CONFIG_IOTMER_OTA_TIMEOUT_MS=300000
+
 # HTTPS provisioning + MQTT TLS need the Mozilla CA bundle (esp_crt_bundle_attach).
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y

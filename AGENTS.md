@@ -25,6 +25,7 @@ For authoritative behaviour details, use **[docs.iotmer.com](https://docs.iotmer
 | 7 | [`docs/sdk/esp-idf/custom-hardware.md`](docs/sdk/esp-idf/custom-hardware.md) | Custom PCB integration checklist |
 | 8 | [`docs/sdk/esp-idf/factory-field-profiles.md`](docs/sdk/esp-idf/factory-field-profiles.md) | Factory vs field firmware |
 | 9 | [`docs/sdk/esp-idf/ble-json-provisioning.md`](docs/sdk/esp-idf/ble-json-provisioning.md) | BLE JSON provisioning contract (English scaffold) |
+| 10 | [`docs/sdk/esp-idf/https-ota.md`](docs/sdk/esp-idf/https-ota.md) | HTTPS OTA: erase-before-TLS, stream GET, Cloudflare/C3 TLS IN=16384 |
 
 When changing code, cross-check the relevant example’s `sdkconfig.defaults`, the “SDK layout” section in `examples/README.md`, and signatures in `iotmer_client.h`.
 

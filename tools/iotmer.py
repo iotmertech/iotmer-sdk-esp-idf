@@ -335,6 +335,32 @@ def _collect_doctor_checks(project: Path) -> List[CheckResult]:
                 "Dual OTA slots typically need CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y or larger.",
             ))
 
+        in_len = _int_value(values, "MBEDTLS_SSL_IN_CONTENT_LEN", 16384)
+        if in_len < 16384:
+            results.append(CheckResult(
+                "warn", "tls_in_content",
+                f"MBEDTLS_SSL_IN_CONTENT_LEN={in_len} (need 16384 for Cloudflare OTA).",
+                "Cloudflare sends 16 KB TLS records; smaller IN fails around ~50 KB with -0x7200.",
+            ))
+        else:
+            results.append(CheckResult(
+                "ok", "tls_in_content",
+                f"MBEDTLS_SSL_IN_CONTENT_LEN={in_len}",
+            ))
+
+        ota_timeout = _int_value(values, "IOTMER_OTA_TIMEOUT_MS", 180000)
+        if ota_timeout < 180000:
+            results.append(CheckResult(
+                "warn", "ota_timeout",
+                f"IOTMER_OTA_TIMEOUT_MS={ota_timeout} (recommended ≥ 180000 on ESP32-C3 / CDN).",
+                "1–1.5 MB images often need 180–300 s; factory examples use 300000.",
+            ))
+        else:
+            results.append(CheckResult(
+                "ok", "ota_timeout",
+                f"IOTMER_OTA_TIMEOUT_MS={ota_timeout}",
+            ))
+
     auth = values.get("IOTMER_PROVISION_AUTH_CODE", "")
     workspace = values.get("IOTMER_WORKSPACE_ID", "")
     if profile == "factory":

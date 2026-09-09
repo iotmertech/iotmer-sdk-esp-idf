@@ -84,6 +84,7 @@ MQTT topics: `{workspace_slug}/{device_key}/…` — see [docs.iotmer.com](https
 | TLS verify errors | Match example `sdkconfig.defaults`; `idf.py fullclean build` |
 | MQTT `not authorized` | Re-provision with auth code or rotate console credentials |
 | Task WDT during TLS | Increase `CONFIG_ESP_TASK_WDT_TIMEOUT_S` and main stack per example defaults |
+| OTA stalls / resets ~50 KB (Cloudflare, C3) | `CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384`; OTA timeout 180–300 s. See [`https-ota.md`](../docs/sdk/esp-idf/https-ota.md) |
 | BLE: missing `ble_gap.h` | `REQUIRES iotmer_ble` in app CMakeLists; `idf.py fullclean` |
 | BLE (macOS): UUID not found | Compare 128-bit values; remove peripheral from Bluetooth settings |
 

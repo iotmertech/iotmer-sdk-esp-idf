@@ -68,6 +68,11 @@ config IOTMER_AUTO_OTA
         checksum differs from the last applied image (NVS: fw_applied_sha256), download via
         HTTPS (CA bundle) and reboot into the new app. Requires an OTA-capable partition table.
 
+        Download erases the staging slot *before* TLS, then streams a single GET with
+        Range resume and hashes SHA256 on the fly (no flash read-back). Cloudflare/R2
+        sends 16 KB TLS records: set CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384 or the GET
+        fails around ~50 KB with MBEDTLS_ERR_SSL_INVALID_RECORD (-0x7200).
+
 config IOTMER_OTA_APPLY_EVEN_IF_SAME_SHA
     bool "OTA even when provision SHA256 matches last applied (NVS)"
     default n
@@ -81,8 +86,12 @@ config IOTMER_OTA_APPLY_EVEN_IF_SAME_SHA
 
 config IOTMER_OTA_TIMEOUT_MS
     int "HTTPS OTA download timeout (ms)"
-    default 120000
+    default 180000
     depends on IOTMER_AUTO_OTA
+    help
+        Per-request HTTP timeout for the firmware GET and each Range resume.
+        ~1–1.5 MB on ESP32-C3 via Cloudflare often needs 180–300 s; 120 s is
+        frequently too short. Factory images (examples/01_provisioning) use 300 s.
 
 config IOTMER_FIRMWARE_POLL
     bool "Background provision poll when firmware URL/SHA missing"

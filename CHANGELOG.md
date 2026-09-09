@@ -4,6 +4,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-09-09
+
+### Fixed
+
+**iotmer**
+
+- **Multi-AP WiFi (same SSID):** scan all channels and connect to the strongest AP; lock BSSID after IP to avoid roaming disconnects; on failure run a full WiFi stop/start reconnect (fixes stuck link until power cycle).
+
+## [0.3.2] - 2026-09-03
+
+### Changed
+
+**iotmer**
+
+- **HTTPS OTA:** stream GET, erase before TLS, streaming SHA256, Range resume (Cloudflare/ESP32-C3).
+- Default `IOTMER_OTA_TIMEOUT_MS` 120 s → 180 s (~1–1.5 MB on C3 often needs 180–300 s).
+
+### Fixed
+
+**iotmer**
+
+- **Cloudflare / ESP32-C3 OTA stall:** `esp_https_ota` erased flash during the TLS GET, filling the lwIP window and resetting the CDN around ~50 KB. Staging erase now runs before the handshake; SHA256 is hashed on the fly (no flash read-back). Dropped connections resume with `Range: bytes=<written>-` (max 8) and the whole attempt retries up to 3 times.
+
+### Notes
+
+- Set `CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384`. Smaller IN buffers fail with `MBEDTLS_ERR_SSL_INVALID_RECORD` (-0x7200) on Cloudflare’s 16 KB TLS records. See `examples/01_provisioning/sdkconfig.defaults` and `docs/sdk/esp-idf/https-ota.md`.
+
 ## [0.3.1] - 2026-08-01
 
 ### Fixed

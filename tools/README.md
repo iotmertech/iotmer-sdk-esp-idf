@@ -34,7 +34,7 @@ python tools/iotmer.py create-app lab-test --deps local --sdk-root /path/to/iotm
 
 ## `doctor`
 
-Checks `sdkconfig.defaults` / `sdkconfig` for common integration mistakes (TLS bundle, main stack, OTA partitions, factory/field auth code).
+Checks `sdkconfig.defaults` / `sdkconfig` for common integration mistakes (TLS bundle, main stack, OTA partitions, mbedTLS IN content length, OTA timeout, factory/field auth code).
 
 ```bash
 python tools/iotmer.py doctor --project examples/02_telemetry
@@ -72,3 +72,4 @@ bash tools/ci/clean.sh
 
 - [Custom hardware integration](../docs/sdk/esp-idf/custom-hardware.md)
 - [Factory vs field profiles](../docs/sdk/esp-idf/factory-field-profiles.md)
+- [HTTPS OTA (Cloudflare / ESP32-C3)](../docs/sdk/esp-idf/https-ota.md)

@@ -102,7 +102,7 @@ iotmer_subscribe(&client, "myws/mydev/custom/#", 1, on_custom, NULL);
 |---------|----------|
 | Wi‑Fi | Retries with 15–60 s backoff after fast retries exhaust. Never stops trying. |
 | MQTT fragments | Reassembles messages larger than `CONFIG_MQTT_BUFFER_SIZE` (cap: `IOTMER_MQTT_RX_ASSEMBLY_MAX`, default 8 KB). |
-| OTA | HTTP(S) auto-OTA verifies SHA256 against the provision checksum before activating. MQTT `"cmd":"ota"` is application-owned (download still HTTP(S)). |
+| OTA | HTTP(S) auto-OTA streams a GET (erase staging **before** TLS, Range resume, SHA256 on the fly vs provision checksum) then activates. MQTT `"cmd":"ota"` is application-owned (download still HTTP(S)). |
 | Presence | Retained JSON on `{workspace_slug}/{device_key}/presence`. LWT on unexpected disconnect. Graceful `iotmer_disconnect()` publishes retained offline when LWT is enabled. |
 | Outbox | QoS1+ queue capped at `IOTMER_MQTT_OUTBOX_LIMIT` (default 16 KB). |
 
@@ -143,6 +143,18 @@ Use `iotmer_finalize_provisioning()` to disconnect and optionally reboot after a
 
 **Stack:** Give the task that calls `iotmer_init()` ≥ 8 KB — it runs Wi‑Fi (blocking) and HTTPS provisioning (TLS).
 
+## HTTPS OTA (Cloudflare / ESP32-C3)
+
+`iotmer_ota_apply_if_needed()` downloads with a raw `esp_http_client` GET — not `esp_https_ota`. Flash erase of the staging slot runs **before** the TLS handshake so the CDN body is not stalled by CPU-bound erase. SHA256 is updated per 4 KB chunk and compared to `firmware_checksum_sha256`; mismatch aborts without changing the boot partition. Same-SHA skip and `IOTMER_OTA_APPLY_EVEN_IF_SAME_SHA` are unchanged.
+
+Required for Cloudflare/R2 (16 KB TLS records):
+
+```
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384
+```
+
+A 4–8 KB IN buffer fails around ~50 KB with `MBEDTLS_ERR_SSL_INVALID_RECORD` (-0x7200). Timeout: 120 s is often too short for ~1.5 MB on C3; use 180–300 s (`CONFIG_IOTMER_OTA_TIMEOUT_MS`). Factory example `01_provisioning` sets 300 s.
+
 ## Low-RAM targets
 
 Add to `sdkconfig.defaults` when BLE and TLS coexist:
@@ -152,6 +164,8 @@ CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
 CONFIG_MBEDTLS_SSL_VARIABLE_BUFFER_LENGTH=y
 CONFIG_MBEDTLS_ASYMMETRIC_CONTENT_LEN=y
 ```
+
+Keep `CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384` even with asymmetric buffers — Cloudflare OTA needs a 16 KB inbound record.
 
 Pair with `CONFIG_IOTMER_TLS_MIN_HEAP_GUARD` and `iotmer_ble_suspend()`.
 
