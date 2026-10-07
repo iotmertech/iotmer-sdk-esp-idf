@@ -4,6 +4,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-10-07
+
+### Changed
+
+**iotmer**
+
+- Registry dependencies are exact: `espressif/cjson` `1.7.19~2`, `espressif/mqtt` `1.0.0`, `espressif/zlib` `1.3.2`. Installing this release resolves those same component versions on any later day.
+- Install snippets pin `iotmertech/iotmer` to `0.3.4` and `iotmertech/iotmer_ble` to `0.2.2`.
+- ESP-IDF requirement is `>=6.0.0,<6.2.0`. CI builds the `v6.0.3` bugfix image.
+
+**iotmer_ble**
+
+- Version **0.2.2**. ESP-IDF requirement is `>=6.0.0,<6.2.0`.
+
 ## [0.3.3] - 2026-09-09
 
 ### Fixed

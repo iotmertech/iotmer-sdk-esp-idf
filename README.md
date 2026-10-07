@@ -11,7 +11,7 @@ Public API: [`components/iotmer/include/iotmer_client.h`](components/iotmer/incl
 ```yaml
 # idf_component.yml
 dependencies:
-  iotmertech/iotmer: "*"
+  iotmertech/iotmer: "0.3.4"
 ```
 
 ```bash
@@ -23,7 +23,9 @@ idf.py update-dependencies
 | Core SDK | [`iotmertech/iotmer`](https://components.espressif.com/components/iotmertech/iotmer) |
 | BLE JSON (optional) | [`iotmertech/iotmer_ble`](https://components.espressif.com/components/iotmertech/iotmer_ble) |
 
-**Requires:** ESP-IDF ≥ 6.x · ESP32 family · TLS via `esp_crt_bundle_attach`
+**Requires:** ESP-IDF ≥ 6.0 and &lt; 6.2 · ESP32 family · TLS via `esp_crt_bundle_attach`
+
+`0.3.4` always solves `espressif/cjson` `1.7.19~2`, `espressif/mqtt` `1.0.0`, and `espressif/zlib` `1.3.2`. ESP-IDF is the copy you install inside that range; it is not downloaded with the component. Optional BLE: `iotmertech/iotmer_ble: "0.2.2"`.
 
 ## Minimal example
 

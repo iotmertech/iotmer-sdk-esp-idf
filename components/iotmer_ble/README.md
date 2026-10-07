@@ -6,8 +6,10 @@ Registry: [`iotmertech/iotmer_ble`](https://components.espressif.com/components/
 
 ```yaml
 dependencies:
-  iotmertech/iotmer_ble: "*"
+  iotmertech/iotmer_ble: "0.2.2"
 ```
+
+**Requires:** ESP-IDF ≥ 6.0 and &lt; 6.2
 
 Provisioning over BLE is built on top of this transport — see `examples/05_ble_json` and the [BLE JSON provisioning contract](../../docs/sdk/esp-idf/ble-json-provisioning.md).
 

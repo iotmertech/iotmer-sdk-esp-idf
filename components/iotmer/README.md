@@ -10,16 +10,18 @@ Add to `idf_component.yml`:
 
 ```yaml
 dependencies:
-  iotmertech/iotmer: "*"
+  iotmertech/iotmer: "0.3.4"
 ```
 
 ```bash
 idf.py update-dependencies
 ```
 
+This release always solves `espressif/cjson` `1.7.19~2`, `espressif/mqtt` `1.0.0`, and `espressif/zlib` `1.3.2`. ESP-IDF is the copy you install (`>=6.0.0,<6.2.0`); it is not downloaded with the component.
+
 Registry: [`iotmertech/iotmer`](https://components.espressif.com/components/iotmertech/iotmer)
 
-**Requires:** ESP-IDF ≥ 6.0 · ESP32 family
+**Requires:** ESP-IDF ≥ 6.0 and &lt; 6.2 · ESP32 family
 
 ## TLS trust store
 

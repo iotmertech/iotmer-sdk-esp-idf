@@ -77,7 +77,7 @@ jobs:
       - name: ESP-IDF build
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v6.0
+          esp_idf_version: v6.0.3
           target: ${{ matrix.target }}
           path: ${{ matrix.example }}
 
@@ -102,6 +102,6 @@ jobs:
       - name: ESP-IDF build
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v6.0
+          esp_idf_version: v6.0.3
           target: esp32c3
           path: ci-scratch/ci-scaffold

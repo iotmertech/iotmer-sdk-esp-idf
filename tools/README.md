@@ -22,7 +22,7 @@ idf.py build
 | `-o`, `--output` | `.` | Parent directory for the new project |
 | `--chip` | `esp32c3` | `esp32`, `esp32s3`, `esp32c3`, `esp32c6`, … |
 | `--profile` | `field` | `field` (NVS session) or `factory` (HTTPS provision) |
-| `--deps` | `registry` | `registry` → `iotmertech/iotmer` in `idf_component.yml` |
+| `--deps` | `registry` | `registry` → `iotmertech/iotmer` `0.3.4` in `idf_component.yml` |
 | `--sdk-root` | repo root | Used with `--deps local` for `EXTRA_COMPONENT_DIRS` |
 
 ### Local SDK checkout
@@ -50,7 +50,7 @@ Exit code `1` when errors are found; warnings do not fail the command.
 | Job | What |
 |-----|------|
 | **doctor** | `iotmer doctor` on all `examples/0*` + `create-app` smoke |
-| **build-examples** | Matrix: examples × `esp32` / `esp32c3` / `esp32s3` (ESP-IDF v6.0) |
+| **build-examples** | Matrix: examples × `esp32` / `esp32c3` / `esp32s3` (ESP-IDF v6.0.3) |
 | **build-scaffold** | `create-app` → `ci-scratch/` (gitignored) + `idf.py build` |
 
 Reproduce locally (doctor only without ESP-IDF):

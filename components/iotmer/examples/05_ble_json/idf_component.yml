@@ -1,3 +1,4 @@
 dependencies:
-  iotmertech/iotmer: "*"
-  iotmertech/iotmer_ble: "*"
+  iotmertech/iotmer:
+    path: "../../"
+  iotmertech/iotmer_ble: "0.2.2"
