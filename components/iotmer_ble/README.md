@@ -6,7 +6,7 @@ Registry: [`iotmertech/iotmer_ble`](https://components.espressif.com/components/
 
 ```yaml
 dependencies:
-  iotmertech/iotmer_ble: "0.2.2"
+  iotmertech/iotmer_ble: "0.3.4"
 ```
 
 **Requires:** ESP-IDF ≥ 6.0 and &lt; 6.2
