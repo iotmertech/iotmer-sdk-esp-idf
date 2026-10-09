@@ -1,5 +1,5 @@
 name: "iotmer"
-version: "0.3.4"
+version: "0.3.5"
 description: "IOTMER IoT Platform SDK for ESP-IDF"
 license: "MIT"
 url: "https://github.com/iotmertech/iotmer-sdk-esp-idf"

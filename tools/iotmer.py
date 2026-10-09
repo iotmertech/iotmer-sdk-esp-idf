@@ -124,7 +124,7 @@ def cmd_create_app(args: argparse.Namespace) -> int:
         component_yml = (
             "dependencies:\n"
             "  idf: \">=6.0.0,<6.2.0\"\n"
-            "  iotmertech/iotmer: \"0.3.4\"\n"
+            "  iotmertech/iotmer: \"0.3.5\"\n"
         )
 
     mapping = {

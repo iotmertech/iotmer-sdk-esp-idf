@@ -18,6 +18,11 @@
  * (same effect as a power cycle) when roaming or repeated failures leave the
  * driver stuck.
  *
+ * iotmer_wifi_kick() is the non-blocking form of that restart: it drops the
+ * BSSID lock, cancels backoff, and stop/starts the radio, then returns.
+ * It does not call iotmer_wifi_connect() and does not wait for an IP.
+ * WIFI_EVENT_STA_START joins only while autoconnect is enabled (the default).
+ *
  * Note: nvs_flash_init() and esp_event_loop_create_default() are the
  * application's responsibility; this module calls them defensively and
  * tolerates ESP_ERR_INVALID_STATE (already initialised).
@@ -72,6 +77,8 @@ static bool                s_connected; /* IP acquired; cleared on STA_DISCONNEC
 static esp_timer_handle_t  s_backoff_timer;
 static uint32_t            s_backoff_ms;
 static bool                s_reconnect_hold;
+/* STA_START / disconnect / backoff join only while this is true. Default on. */
+static bool                s_autoconnect = true;
 static char                s_sta_ssid[sizeof(((wifi_config_t *)0)->sta.ssid)];
 static char                s_sta_pass[sizeof(((wifi_config_t *)0)->sta.password)];
 
@@ -174,7 +181,7 @@ static void wifi_lock_bssid_on_got_ip(void)
 
 static void wifi_sta_reconnect_attempt(bool full_restart)
 {
-    if (s_reconnect_hold) {
+    if (s_reconnect_hold || !s_autoconnect) {
         return;
     }
 
@@ -220,6 +227,10 @@ static void wifi_backoff_timer_cb(void *arg)
         ESP_LOGI(TAG, "WiFi backoff skip — reconnect held");
         return;
     }
+    if (!s_autoconnect) {
+        ESP_LOGI(TAG, "WiFi backoff skip — autoconnect off");
+        return;
+    }
     ESP_LOGI(TAG, "WiFi backoff retry — attempting reconnect");
     wifi_sta_reconnect_attempt(true);
 }
@@ -236,6 +247,10 @@ static void schedule_backoff_reconnect(void)
     }
     if (s_reconnect_hold) {
         ESP_LOGW(TAG, "WiFi backoff deferred — reconnect held");
+        return;
+    }
+    if (!s_autoconnect) {
+        ESP_LOGW(TAG, "WiFi backoff deferred — autoconnect off");
         return;
     }
     if (s_backoff_ms == 0U) {
@@ -270,6 +285,23 @@ void iotmer_wifi_set_reconnect_hold(bool hold)
     if (!s_connected) {
         schedule_backoff_reconnect();
     }
+}
+
+void iotmer_wifi_set_autoconnect(bool enable)
+{
+    if (s_autoconnect == enable) {
+        return;
+    }
+    s_autoconnect = enable;
+    if (!enable) {
+        /* A 15 s backoff already armed must not join over a provisioning scan. */
+        if (s_backoff_timer) {
+            (void)esp_timer_stop(s_backoff_timer);
+        }
+        ESP_LOGI(TAG, "WiFi autoconnect OFF");
+        return;
+    }
+    ESP_LOGI(TAG, "WiFi autoconnect ON");
 }
 
 static esp_err_t nvs_get_str_safe(nvs_handle_t h, const char *key, char *out, size_t out_len)
@@ -425,6 +457,75 @@ esp_err_t iotmer_wifi_reconnect(void)
     return iotmer_wifi_connect();
 }
 
+esp_err_t iotmer_wifi_kick(void)
+{
+    /* Hold owns the radio. Caller releases it before a restart. */
+    if (s_reconnect_hold) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    /* NVS, else Kconfig. Do not touch the radio when neither has an SSID.
+     * Load into locals so a miss does not wipe a previous RAM copy. */
+    char ssid[sizeof(s_sta_ssid)];
+    char pass[sizeof(s_sta_pass)];
+    ssid[0] = '\0';
+    pass[0] = '\0';
+    esp_err_t err = wifi_load_sta_credentials(ssid, sizeof(ssid), pass, sizeof(pass));
+    if (err != ESP_OK || ssid[0] == '\0') {
+        return ESP_ERR_INVALID_STATE;
+    }
+    strncpy(s_sta_ssid, ssid, sizeof(s_sta_ssid) - 1);
+    s_sta_ssid[sizeof(s_sta_ssid) - 1] = '\0';
+    strncpy(s_sta_pass, pass, sizeof(s_sta_pass) - 1);
+    s_sta_pass[sizeof(s_sta_pass) - 1] = '\0';
+
+    err = wifi_init_once();
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    /* Drop BSSID lock. Next join uses WIFI_ALL_CHANNEL_SCAN and
+     * WIFI_CONNECT_AP_BY_SIGNAL; authmode, PMF, and failure_retry_cnt stay. */
+    err = wifi_apply_sta_config(false, NULL);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    s_connected = false;
+    s_retry_num = 0;
+    s_backoff_ms = 0;
+    if (s_backoff_timer) {
+        (void)esp_timer_stop(s_backoff_timer);
+    }
+
+    err = esp_wifi_disconnect();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STARTED) {
+        /* ignore — not associated is fine; stop/start still restarts the STA */
+    }
+    err = esp_wifi_stop();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STARTED) {
+        return err;
+    }
+    /* WIFI_EVENT_STA_STOP is async; don't wait for it to clear s_started. */
+    s_started = false;
+
+    err = esp_wifi_start();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "esp_wifi_start (kick): %s", esp_err_to_name(err));
+        return err;
+    }
+
+    /* STA_START calls esp_wifi_connect() when autoconnect is on. Do not
+     * connect again here, and do not wait on the event group. */
+    ESP_LOGI(TAG, "WiFi kick — start requested (ssid=%s)", s_sta_ssid);
+    return ESP_OK;
+}
+
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
@@ -432,7 +533,11 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         s_started = true;
-        (void)esp_wifi_connect();
+        if (s_autoconnect) {
+            (void)esp_wifi_connect();
+        } else {
+            ESP_LOGI(TAG, "WiFi STA started — autoconnect off");
+        }
 
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_STOP) {
         s_started = false;
@@ -454,13 +559,18 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                      "WiFi disconnected — reason=%d rssi=%d bssid=" MACSTR
                      "%s",
                      reason, disc->rssi, MAC2STR(disc->bssid),
-                     s_reconnect_hold ? " (reconnect held)" : "");
+                     s_reconnect_hold ? " (reconnect held)" :
+                     (!s_autoconnect ? " (autoconnect off)" : ""));
         } else {
             ESP_LOGW(TAG, "WiFi disconnected — reason unknown%s",
-                     s_reconnect_hold ? " (reconnect held)" : "");
+                     s_reconnect_hold ? " (reconnect held)" :
+                     (!s_autoconnect ? " (autoconnect off)" : ""));
         }
 
         if (s_reconnect_hold) {
+            xEventGroupSetBits(s_event_group, WIFI_FAIL_BIT);
+        } else if (!s_autoconnect) {
+            /* Provisioning scan owns the radio; do not join the saved AP. */
             xEventGroupSetBits(s_event_group, WIFI_FAIL_BIT);
         } else if (s_retry_num < WIFI_FAST_RETRY_MAX) {
             s_retry_num++;
@@ -588,8 +698,9 @@ esp_err_t iotmer_wifi_connect(void)
 
     /*
      * If WiFi was already started, esp_wifi_start() emits no STA_START event and
-     * the STA_START → esp_wifi_connect() chain never fires. Kick the connection
-     * directly so the call below doesn't just sit out the 30 s timeout.
+     * the STA_START → esp_wifi_connect() chain never fires (that chain runs only
+     * while autoconnect is enabled). Kick the connection directly so the call
+     * below doesn't just sit out the 30 s timeout.
      */
     if (was_started) {
         err = esp_wifi_connect();

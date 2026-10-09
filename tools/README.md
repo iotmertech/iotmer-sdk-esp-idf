@@ -22,7 +22,7 @@ idf.py build
 | `-o`, `--output` | `.` | Parent directory for the new project |
 | `--chip` | `esp32c3` | `esp32`, `esp32s3`, `esp32c3`, `esp32c6`, … |
 | `--profile` | `field` | `field` (NVS session) or `factory` (HTTPS provision) |
-| `--deps` | `registry` | `registry` → `iotmertech/iotmer` `0.3.4` in `idf_component.yml` |
+| `--deps` | `registry` | `registry` → `iotmertech/iotmer` `0.3.5` in `idf_component.yml` |
 | `--sdk-root` | repo root | Used with `--deps local` for `EXTRA_COMPONENT_DIRS` |
 
 ### Local SDK checkout

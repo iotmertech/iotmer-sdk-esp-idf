@@ -10,7 +10,7 @@ Add to `idf_component.yml`:
 
 ```yaml
 dependencies:
-  iotmertech/iotmer: "0.3.4"
+  iotmertech/iotmer: "0.3.5"
 ```
 
 ```bash
@@ -102,7 +102,7 @@ iotmer_subscribe(&client, "myws/mydev/custom/#", 1, on_custom, NULL);
 
 | Feature | Behavior |
 |---------|----------|
-| Wi‑Fi | Retries with 15–60 s backoff after fast retries exhaust. Never stops trying. |
+| Wi‑Fi | Retries with 15–60 s backoff after fast retries exhaust. Never stops trying. `iotmer_wifi_kick()` restarts the STA without blocking. |
 | MQTT fragments | Reassembles messages larger than `CONFIG_MQTT_BUFFER_SIZE` (cap: `IOTMER_MQTT_RX_ASSEMBLY_MAX`, default 8 KB). |
 | OTA | HTTP(S) auto-OTA streams a GET (erase staging **before** TLS, Range resume, SHA256 on the fly vs provision checksum) then activates. MQTT `"cmd":"ota"` is application-owned (download still HTTP(S)). |
 | Presence | Retained JSON on `{workspace_slug}/{device_key}/presence`. LWT on unexpected disconnect. Graceful `iotmer_disconnect()` publishes retained offline when LWT is enabled. |
@@ -114,6 +114,21 @@ Presence payload:
 {"status":"online","ts":1748000000}
 {"status":"offline","ts":0}
 ```
+
+## Wi‑Fi
+
+`iotmer_wifi_connect()` / `iotmer_wifi_up()` block until an IP is acquired or 30 s elapses (`WIFI_CONNECT_TIMEOUT_MS`). After association the BSSID is locked. Fast retries, then a 15–60 s backoff, keep trying.
+
+`iotmer_wifi_kick()` restarts the STA and returns immediately. It does not call `iotmer_wifi_connect()` and does not wait on the event group.
+
+- Reconnect hold set → `ESP_ERR_INVALID_STATE`, radio unchanged. Release the hold first.
+- No STA credential (NVS, otherwise Kconfig) → `ESP_ERR_INVALID_STATE`.
+- Otherwise the BSSID lock is cleared through the existing station config (`lock_bssid` false): next join uses an all-channel scan and picks the strongest AP. Authmode threshold, PMF, and failure retry count stay as they are. The application does not write `wifi_config_t`.
+- Clears the connected flag, fast-retry count, and backoff delay, and stops the backoff timer so a pending 15 s retry does not fight the restart.
+- `esp_wifi_disconnect()`, then `esp_wifi_stop()` (the started flag is cleared in this call because `WIFI_EVENT_STA_STOP` is async), then `esp_wifi_start()`. `ESP_ERR_WIFI_NOT_STARTED` from disconnect/stop is ignored. Any other error from stop or `esp_wifi_start()` is returned.
+- `ESP_OK` means start was requested, not that an IP exists. `WIFI_EVENT_STA_START` calls `esp_wifi_connect()` when autoconnect is on; kick does not connect again.
+
+`iotmer_wifi_set_autoconnect()` defaults to enabled (today's behavior: `STA_START` always connects, and disconnect/backoff retry). Set it false before a provisioning scan that calls `esp_wifi_start()` while the radio was stopped for BLE: `STA_START` only marks the radio started and does not join the saved AP, and disconnect/backoff do not reconnect until autoconnect is enabled again. Credentials are not cleared. Turning autoconnect back on does not itself connect — call `iotmer_wifi_kick()` or `iotmer_wifi_connect()`.
 
 ## Configuration
 

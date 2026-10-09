@@ -4,6 +4,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-10-09
+
+### Added
+
+**iotmer**
+
+- `iotmer_wifi_kick()` — non-blocking STA restart. Drops the BSSID lock (all-channel scan, strongest AP; authmode threshold, PMF, and failure retry count unchanged), cancels backoff, then `esp_wifi_disconnect()` / `esp_wifi_stop()` / `esp_wifi_start()`. Returns `ESP_OK` once start is requested, not when an IP exists. `ESP_ERR_WIFI_NOT_STARTED` from disconnect/stop is ignored. Returns `ESP_ERR_INVALID_STATE` when reconnect hold is set (radio untouched) or when no STA credential is available (NVS, else Kconfig).
+- `iotmer_wifi_set_autoconnect()` — default remains enabled (`WIFI_EVENT_STA_START` calls `esp_wifi_connect()`; disconnect and backoff keep retrying). When disabled, STA start does not join and disconnect/backoff do not reconnect, so a provisioning scan can call `esp_wifi_start()` while the radio was stopped for BLE without joining the saved AP. Credentials are not cleared.
+
+### Changed
+
+- Version **0.3.5**. ESP-IDF requirement stays `>=6.0.0,<6.2.0`. Registry pins unchanged: `espressif/cjson` `1.7.19~2`, `espressif/mqtt` `1.0.0`, `espressif/zlib` `1.3.2`.
+- Install snippets and the `tools/iotmer.py` registry scaffold pin `iotmertech/iotmer` to `0.3.5`. `iotmer_ble` stays **0.3.4**.
+
 ## [0.3.4] - 2026-10-07
 
 ### Changed
