@@ -4,6 +4,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-10-29
+
+### Added
+
+**iotmer**
+
+- **MQTT failover:** one session across an ordered `mqtt_endpoints` list (`primary` / `backup`) from provisioning or `GET /api/v1/devices/auth/mqtt-endpoints` (`Authorization: Bearer` device HTTP token, `If-None-Match` when an ETag is stored). `mqtt_host`, `mqtt_port`, and `mqtt_tls` remain the first endpoint. The device leaves a broker only after Wi-Fi is up, at least `same_host_attempts` failures (floor 3) span `min_fail_window_sec` (floor 300 s), and a successful CONNACK clears that window. `last_good` is written only after CONNACK. While the session is on a backup, the primary is probed with a TLS handshake (no MQTT CONNECT) every `probe_interval_sec` (clamped to 15–60 s); a healthy `failback_healthy_sec` window (floor 300 s) plus jitter returns to the primary. DNS answers are not reused across attempts. A refreshed list does not drop a connected host that is still present. Endpoint `region` is stored only as a label. `policy` keys `backoff_initial_ms`, `backoff_max_ms`, `tcp_timeout_ms`, and `dns_timeout_ms` are ignored; reconnect spacing stays `reconnect_delay_ms`.
+
+### Changed
+
+- Version **0.3.6**. ESP-IDF requirement stays `>=6.0.0,<6.2.0`. Registry pins unchanged: `espressif/cjson` `1.7.19~2`, `espressif/mqtt` `1.0.0`, `espressif/zlib` `1.3.2`.
+- Install snippets and the `tools/iotmer.py` registry scaffold pin `iotmertech/iotmer` to `0.3.6`. `iotmer_ble` stays **0.3.4**.
+
 ## [0.3.5] - 2026-10-09
 
 ### Added

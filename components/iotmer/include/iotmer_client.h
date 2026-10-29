@@ -41,6 +41,11 @@ typedef struct {
     /** Set by SDK after a successful auto-OTA (NVS); used to skip re-flashing the same build. */
     char firmware_applied_sha256[65];
 
+    /**
+     * First MQTT endpoint. Firmware that does not read `mqtt_endpoints` keeps using
+     * these three fields. When the server sends an ordered list, the SDK still copies
+     * endpoint 0 here and connects through that list (see docs mqtt failover).
+     */
     char mqtt_host[128];
     int  mqtt_port;
     bool mqtt_tls;

@@ -17,6 +17,8 @@ iotmer_telemetry_publish(&client, "{\"temp\":22.5,\"hum\":60}");
 
 See `main/main.c` for the full connect/wait loop.
 
+Broker failover is inside the SDK: one MQTT session, ordered `mqtt_endpoints`, and a return to the primary after it stays healthy. No application calls are required. Details: [MQTT failover](../../docs/sdk/esp-idf/mqtt-failover.md).
+
 ## Configure
 
 After first provision via `01_provisioning`, leave `IOTMER_PROVISION_AUTH_CODE` empty. HTTPS is skipped when NVS holds a complete session.

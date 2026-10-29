@@ -94,6 +94,10 @@ esp_err_t iotmer_nvs_load_creds(iotmer_creds_t *out)
 
     (void)nvs_get_str_safe(h, "workspace_slug", out->workspace_slug, sizeof(out->workspace_slug));
     (void)nvs_get_str_safe(h, "dht", out->device_http_token, sizeof(out->device_http_token));
+    iotmer_mqtt_directory_nvs_read(h, out);
+    if (out->mqtt_host[0] != '\0') {
+        e3 = ESP_OK;
+    }
 
     nvs_close(h);
 
@@ -169,6 +173,8 @@ esp_err_t iotmer_nvs_save_creds(const iotmer_creds_t *creds)
     err = nvs_set_or_erase_str(h, "workspace_slug", creds->workspace_slug);
     if (err != ESP_OK) goto out;
     err = nvs_set_or_erase_str(h, "dht", creds->device_http_token);
+    if (err != ESP_OK) goto out;
+    err = iotmer_mqtt_directory_nvs_write(h);
     if (err != ESP_OK) goto out;
 
     err = nvs_commit(h);

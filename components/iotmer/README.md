@@ -10,7 +10,7 @@ Add to `idf_component.yml`:
 
 ```yaml
 dependencies:
-  iotmertech/iotmer: "0.3.5"
+  iotmertech/iotmer: "0.3.6"
 ```
 
 ```bash
@@ -104,6 +104,7 @@ iotmer_subscribe(&client, "myws/mydev/custom/#", 1, on_custom, NULL);
 |---------|----------|
 | Wi‑Fi | Retries with 15–60 s backoff after fast retries exhaust. Never stops trying. `iotmer_wifi_kick()` restarts the STA without blocking. |
 | MQTT fragments | Reassembles messages larger than `CONFIG_MQTT_BUFFER_SIZE` (cap: `IOTMER_MQTT_RX_ASSEMBLY_MAX`, default 8 KB). |
+| MQTT failover | One session. Ordered `mqtt_endpoints` from provision or `GET …/devices/auth/mqtt-endpoints`. Stays on a host until the server fail window (floor 5 min) and attempt count are both met. Probes the primary with a short TLS handshake while on a backup. |
 | OTA | HTTP(S) auto-OTA streams a GET (erase staging **before** TLS, Range resume, SHA256 on the fly vs provision checksum) then activates. MQTT `"cmd":"ota"` is application-owned (download still HTTP(S)). |
 | Presence | Retained JSON on `{workspace_slug}/{device_key}/presence`. LWT on unexpected disconnect. Graceful `iotmer_disconnect()` publishes retained offline when LWT is enabled. |
 | Outbox | QoS1+ queue capped at `IOTMER_MQTT_OUTBOX_LIMIT` (default 16 KB). |

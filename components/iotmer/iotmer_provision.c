@@ -398,6 +398,8 @@ esp_err_t iotmer_provision(iotmer_creds_t *out, bool *https_performed)
         out->mqtt_port = 8883;
     }
 
+    iotmer_mqtt_directory_ingest(jr, out);
+
     {
         const size_t pwlen = strlen(out->mqtt_password);
         const bool had_pw = backup.mqtt_password[0] != '\0';

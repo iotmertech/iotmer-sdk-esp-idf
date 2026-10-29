@@ -72,6 +72,8 @@ python ../tools/iotmer.py doctor --project .
 4. Save credentials
 5. HTTPS OTA (when firmware metadata is present)
 
+`iotmer_connect()` then keeps a single MQTT session. On boot it refreshes `GET /devices/auth/mqtt-endpoints` when a device HTTP token is stored. See [MQTT failover](../docs/sdk/esp-idf/mqtt-failover.md).
+
 MQTT topics: `{workspace_slug}/{device_key}/…` — see [docs.iotmer.com](https://docs.iotmer.com/).
 
 ## Troubleshooting

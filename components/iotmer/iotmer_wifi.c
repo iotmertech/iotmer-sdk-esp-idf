@@ -457,6 +457,8 @@ esp_err_t iotmer_wifi_reconnect(void)
     return iotmer_wifi_connect();
 }
 
+static esp_err_t wifi_init_once(void);
+
 esp_err_t iotmer_wifi_kick(void)
 {
     /* Hold owns the radio. Caller releases it before a restart. */
@@ -724,4 +726,9 @@ esp_err_t iotmer_wifi_connect(void)
 
     ESP_LOGE(TAG, "WiFi connect timed out after %d ms", WIFI_CONNECT_TIMEOUT_MS);
     return ESP_ERR_TIMEOUT;
+}
+
+bool iotmer_wifi_sta_has_ip(void)
+{
+    return s_connected;
 }

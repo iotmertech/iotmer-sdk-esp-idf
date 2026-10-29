@@ -99,26 +99,79 @@ static void creds_lock_give(void)
     }
 }
 
-/*
- * TLS coexistence hooks: acquire/release must pair exactly once per connect
- * attempt — including failed attempts — or the app-side resources freed in
- * on_tls_acquire (e.g. a suspended BLE stack) are never restored.
- */
-static void tls_hook_acquire(iotmer_client_t *client)
+void iotmer_creds_lock(void)
 {
-    if (client->cfg.tls && client->cfg.on_tls_acquire && !client->tls_hook_held) {
-        client->tls_hook_held = true;
-        client->cfg.on_tls_acquire(client->cfg.user_ctx);
+    creds_lock_take();
+}
+
+void iotmer_creds_unlock(void)
+{
+    creds_lock_give();
+}
+
+/*
+ * TLS coexistence hooks. Depth covers the MQTT handshake plus a short primary
+ * probe. Release with depth 0 is a no-op so teardown can release twice
+ * (explicitly, then again from MQTT_EVENT_DISCONNECTED).
+ */
+static SemaphoreHandle_t s_tls_hook_lock;
+static uint8_t s_tls_hook_depth;
+
+static void tls_hook_lock(void)
+{
+    if (!s_tls_hook_lock) {
+        s_tls_hook_lock = xSemaphoreCreateMutex();
+    }
+    if (s_tls_hook_lock) {
+        (void)xSemaphoreTake(s_tls_hook_lock, portMAX_DELAY);
     }
 }
 
-static void tls_hook_release(iotmer_client_t *client)
+static void tls_hook_unlock(void)
 {
-    if (client->tls_hook_held) {
+    if (s_tls_hook_lock) {
+        (void)xSemaphoreGive(s_tls_hook_lock);
+    }
+}
+
+void iotmer_tls_hook_acquire(iotmer_client_t *client, bool tls)
+{
+    if (!client || !tls || !client->cfg.on_tls_acquire) {
+        return;
+    }
+    tls_hook_lock();
+    if (s_tls_hook_depth < 255) {
+        s_tls_hook_depth++;
+    }
+    client->tls_hook_held = true;
+    bool first = (s_tls_hook_depth == 1);
+    if (first) {
+        client->cfg.on_tls_acquire(client->cfg.user_ctx);
+    }
+    tls_hook_unlock();
+}
+
+void iotmer_tls_hook_release(iotmer_client_t *client)
+{
+    if (!client) {
+        return;
+    }
+    tls_hook_lock();
+    if (s_tls_hook_depth == 0) {
         client->tls_hook_held = false;
-        if (client->cfg.on_tls_release) {
-            client->cfg.on_tls_release(client->cfg.user_ctx);
-        }
+        tls_hook_unlock();
+        return;
+    }
+    s_tls_hook_depth--;
+    bool last = (s_tls_hook_depth == 0);
+    if (last) {
+        client->tls_hook_held = false;
+    }
+    void (*release_cb)(void *) = last ? client->cfg.on_tls_release : NULL;
+    void *ctx = client->cfg.user_ctx;
+    tls_hook_unlock();
+    if (release_cb) {
+        release_cb(ctx);
     }
 }
 
@@ -500,6 +553,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
          */
         client->connected = true;
         client->mqtt_auth_backoff_ms = 0;
+        iotmer_mqtt_failover_on_connack(client);
         mark_broker_activity(client);
         if (client->reconnect_timer) {
             (void)esp_timer_stop((esp_timer_handle_t)client->reconnect_timer);
@@ -507,7 +561,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
         ESP_LOGI(TAG, "MQTT connected");
 
         /* Handshake done: let the app restore any resources freed for TLS. */
-        tls_hook_release(client);
+        iotmer_tls_hook_release(client);
 
         /* Presence/LWT: on every connect, publish retained online JSON. */
         if (client->cfg.presence_lwt_enable) {
@@ -531,27 +585,35 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
 
     case MQTT_EVENT_DISCONNECTED: {
         client->connected = false;
-        /*
-         * Failed attempt or lost connection: release the TLS-coexistence resources
-         * (per the on_tls_release contract) so the app is never left suspended.
-         * The next connect attempt re-runs on_tls_acquire.
-         */
-        tls_hook_release(client);
-        /* Any half-reassembled message from this session is now stale. */
         rx_assembly_reset(client);
-        uint32_t wait_ms = client->mqtt_auth_backoff_ms != 0U
-                               ? client->mqtt_auth_backoff_ms
-                               : (uint32_t)client->cfg.reconnect_delay_ms;
-        if (client->mqtt_auth_backoff_ms != 0U) {
-            ESP_LOGW(TAG, "MQTT disconnected — reconnecting in %" PRIu32 " ms (auth-failure backoff)",
-                     wait_ms);
-        } else {
-            ESP_LOGW(TAG, "MQTT disconnected — reconnecting in %" PRIu32 " ms", wait_ms);
+        /*
+         * Intentional teardown (host change, hard reconnect) already released the
+         * TLS hook. Skipping the release here keeps a newer handshake's hold.
+         */
+        if (iotmer_mqtt_failover_consume_suppress()) {
+            if (client->cfg.on_disconnected) {
+                client->cfg.on_disconnected(client, client->cfg.user_ctx);
+            }
+            break;
         }
-        if (client->reconnect_timer) {
+        iotmer_tls_hook_release(client);
+
+        iotmer_mqtt_fo_step_t step = {
+            .wait_ms = 5000,
+            .arm_timer = true,
+        };
+        iotmer_mqtt_failover_on_disconnect(client, &step);
+        if (step.arm_timer && client->reconnect_timer) {
+            if (client->mqtt_auth_backoff_ms != 0U &&
+                step.wait_ms == client->mqtt_auth_backoff_ms) {
+                ESP_LOGW(TAG, "MQTT disconnected — reconnecting in %" PRIu32 " ms (auth-failure backoff)",
+                         step.wait_ms);
+            } else {
+                ESP_LOGW(TAG, "MQTT disconnected — reconnecting in %" PRIu32 " ms", step.wait_ms);
+            }
             (void)esp_timer_stop((esp_timer_handle_t)client->reconnect_timer);
             (void)esp_timer_start_once((esp_timer_handle_t)client->reconnect_timer,
-                                        (uint64_t)wait_ms * 1000ULL);
+                                       (uint64_t)step.wait_ms * 1000ULL);
         }
         if (client->cfg.on_disconnected) {
             client->cfg.on_disconnected(client, client->cfg.user_ctx);
@@ -612,6 +674,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
     case MQTT_EVENT_ERROR:
         if (event->error_handle) {
             const esp_mqtt_error_codes_t *eh = event->error_handle;
+            iotmer_mqtt_failover_on_error(eh);
             const char *etype = "other";
             if (eh->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
                 etype = "TCP/TLS transport";
@@ -684,8 +747,28 @@ static void reconnect_timer_cb(void *arg)
     iotmer_client_t *client = (iotmer_client_t *)arg;
     if (!client) return;
 
+    /*
+     * The current esp-mqtt client keeps the previous hostname. Tear it down and
+     * start the new host after the settle delay (same pattern as hard reconnect).
+     */
+    if (client->mqtt && iotmer_mqtt_failover_consume_need_hard()) {
+        iotmer_mqtt_failover_suppress_disconnect();
+        iotmer_tls_hook_release(client);
+        (void)esp_mqtt_client_stop((esp_mqtt_client_handle_t)client->mqtt);
+        esp_mqtt_client_destroy((esp_mqtt_client_handle_t)client->mqtt);
+        client->mqtt = NULL;
+        client->connected = false;
+        rx_assembly_reset(client);
+        if (client->reconnect_timer) {
+            (void)esp_timer_start_once((esp_timer_handle_t)client->reconnect_timer,
+                                       (uint64_t)IOTMER_HARD_RECONNECT_SETTLE_MS * 1000ULL);
+        }
+        return;
+    }
+
     if (!client->mqtt) {
-        /* Second phase of a hard reconnect: teardown already happened, restart now. */
+        iotmer_mqtt_failover_clear_need_hard();
+        iotmer_mqtt_failover_drop_dns_cache();
         ESP_LOGI(TAG, "hard reconnect: starting fresh MQTT client");
         esp_err_t e = mqtt_client_start(client);
         if (e != ESP_OK && client->reconnect_timer) {
@@ -701,8 +784,8 @@ static void reconnect_timer_cb(void *arg)
     }
 
     ESP_LOGI(TAG, "Attempting MQTT reconnect...");
-    /* Soft reconnect performs a TLS handshake too — re-run the acquire hook. */
-    tls_hook_acquire(client);
+    iotmer_mqtt_failover_drop_dns_cache();
+    iotmer_tls_hook_acquire(client, iotmer_mqtt_failover_uses_tls(client));
     esp_err_t e = esp_mqtt_client_reconnect((esp_mqtt_client_handle_t)client->mqtt);
     if (e != ESP_OK) {
         /*
@@ -864,59 +947,80 @@ esp_err_t iotmer_init(iotmer_client_t *client, const iotmer_config_t *cfg)
  */
 static esp_err_t mqtt_client_start(iotmer_client_t *client)
 {
+    char host[128];
+    char username[96];
+    char password[96];
+    char client_id[96];
+    int resolved_port = 8883;
+    bool use_tls = client->cfg.tls;
+    uint8_t ep_index = 0;
+    const char *role = "legacy";
+    host[0] = '\0';
+    username[0] = '\0';
+    password[0] = '\0';
+    client_id[0] = '\0';
+
     /*
-     * TLS coexistence (A1): give the app a chance to free contiguous internal RAM
-     * (e.g. suspend BLE) before the handshake. Optionally guard against an obviously
-     * insufficient heap and fail early with a clear error instead of an opaque
-     * mbedTLS -0x3000.
+     * Copy endpoint and credentials under the creds lock. esp_mqtt_client_init()
+     * duplicates the pointers below, which then refer to these stack buffers.
      */
-    tls_hook_acquire(client);
+    creds_lock_take();
+    iotmer_mqtt_failover_select_unlocked(client, host, sizeof(host),
+                                         &resolved_port, &use_tls, &ep_index, &role);
+    snprintf(username, sizeof(username), "%s", client->creds.mqtt_username);
+    snprintf(password, sizeof(password), "%s", client->creds.mqtt_password);
+    snprintf(client_id, sizeof(client_id), "%s",
+             username[0] != '\0' ? username : client->creds.device_id);
+
+    esp_err_t err = ESP_OK;
+    if (client->cfg.presence_lwt_enable) {
+        err = iotmer_topics_build_publish(client->presence_topic,
+                                          sizeof(client->presence_topic),
+                                          client->creds.workspace_slug,
+                                          client->creds.device_key,
+                                          "presence");
+    }
+    creds_lock_give();
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "presence topic build failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    if (host[0] == '\0') {
+        ESP_LOGE(TAG, "MQTT endpoint hostname is empty");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    /*
+     * TLS coexistence: free contiguous internal RAM before the handshake.
+     * The heap guard runs after that release has had a moment to settle.
+     */
+    iotmer_tls_hook_acquire(client, use_tls);
 #if CONFIG_IOTMER_TLS_MIN_HEAP_GUARD > 0
-    if (client->cfg.tls) {
+    if (use_tls) {
         size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
         if (largest < (size_t)CONFIG_IOTMER_TLS_MIN_HEAP_GUARD) {
-            /* Give any just-triggered release (BLE deinit) a moment to settle, then re-check. */
             vTaskDelay(pdMS_TO_TICKS(150));
             largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
         }
         if (largest < (size_t)CONFIG_IOTMER_TLS_MIN_HEAP_GUARD) {
-            ESP_LOGE(TAG, "TLS heap guard: largest free internal block %zu < %d — aborting connect",
-                     largest, CONFIG_IOTMER_TLS_MIN_HEAP_GUARD);
-            tls_hook_release(client);
+            ESP_LOGE(TAG, "TLS heap guard: largest free internal block %u < %d — aborting connect",
+                     (unsigned)largest, CONFIG_IOTMER_TLS_MIN_HEAP_GUARD);
+            iotmer_tls_hook_release(client);
             return ESP_ERR_NO_MEM;
         }
     }
 #endif
 
-    /*
-     * Hold the creds lock while reading creds and until esp_mqtt_client_init()
-     * has duplicated the strings — the firmware poll task may swap creds in
-     * the background. Held only for the (quick) config build, not the handshake.
-     */
-    creds_lock_take();
-
-    int resolved_port = client->creds.mqtt_port
-                            ? client->creds.mqtt_port
-                            : client->cfg.broker_port;
-
-    /*
-     * ESP-IDF defaults client_id to a MAC-derived value; many cloud brokers
-     * authorize only when client_id matches the provisioned identity (often
-     * the same string as mqtt_username).
-     */
-    const char *mqtt_client_id = (client->creds.mqtt_username[0] != '\0')
-                                     ? client->creds.mqtt_username
-                                     : client->creds.device_id;
-
     esp_mqtt_client_config_t mcfg = {
-        .broker.address.hostname              = client->creds.mqtt_host,
+        .broker.address.hostname              = host,
         .broker.address.port                  = (uint32_t)resolved_port,
-        .broker.address.transport             = client->cfg.tls
+        .broker.address.transport             = use_tls
                                                     ? MQTT_TRANSPORT_OVER_SSL
                                                     : MQTT_TRANSPORT_OVER_TCP,
-        .credentials.username                 = client->creds.mqtt_username,
-        .credentials.authentication.password  = client->creds.mqtt_password,
-        .credentials.client_id                = mqtt_client_id,
+        .credentials.username                 = username,
+        .credentials.authentication.password  = password,
+        .credentials.client_id                = client_id,
         .session.keepalive                    = client->cfg.keepalive_sec,
         .network.disable_auto_reconnect       = true, /* we handle reconnect manually */
 #if CONFIG_IOTMER_MQTT_OUTBOX_LIMIT > 0
@@ -924,68 +1028,47 @@ static esp_err_t mqtt_client_start(iotmer_client_t *client)
 #endif
     };
 
-    esp_err_t err = ESP_OK;
-
     if (client->cfg.presence_lwt_enable) {
-        /* MQTT LWT must reference memory that lives at least until client stop/destroy. */
-        err = iotmer_topics_build_publish(client->presence_topic,
-                                          sizeof(client->presence_topic),
-                                          client->creds.workspace_slug,
-                                          client->creds.device_key,
-                                          "presence");
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "presence topic build failed: %s", esp_err_to_name(err));
-            goto fail;
-        }
-
-        /* Same JSON contract as iotmer_presence_publish(); ts=0 because the
-         * broker delivers the will long after this config is built. */
         mcfg.session.last_will.topic  = client->presence_topic;
         mcfg.session.last_will.msg    = "{\"status\":\"offline\",\"ts\":0}";
         mcfg.session.last_will.qos    = 1;
         mcfg.session.last_will.retain = 1;
     }
 
-    if (client->cfg.tls) {
+    if (use_tls) {
         iotmer_tls_apply_mqtt_verification(&mcfg);
     }
 
     esp_mqtt_client_handle_t h = esp_mqtt_client_init(&mcfg);
     if (!h) {
-        err = ESP_ERR_NO_MEM;
-        goto fail;
+        iotmer_tls_hook_release(client);
+        return ESP_ERR_NO_MEM;
     }
-
-    /* Config strings are duplicated by esp_mqtt_client_init(); safe to unlock. */
-    creds_lock_give();
 
     err = esp_mqtt_client_register_event(h, ESP_EVENT_ANY_ID,
                                          mqtt_event_handler, client);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "event register failed: %s", esp_err_to_name(err));
         esp_mqtt_client_destroy(h);
-        tls_hook_release(client);
+        iotmer_tls_hook_release(client);
         return err;
     }
 
+    /* Lookup the hostname again. Do not reuse an address from the previous attempt. */
+    iotmer_mqtt_failover_drop_dns_cache();
     err = esp_mqtt_client_start(h);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "mqtt start failed: %s", esp_err_to_name(err));
         esp_mqtt_client_destroy(h);
-        tls_hook_release(client);
+        iotmer_tls_hook_release(client);
         return err;
     }
 
     client->mqtt = h;
-    ESP_LOGI(TAG, "MQTT client started (host=%s port=%d tls=%s client_id=%s)",
-             client->creds.mqtt_host, resolved_port,
-             client->cfg.tls ? "yes" : "no", mqtt_client_id);
+    ESP_LOGI(TAG, "MQTT client started (host=%s port=%d tls=%s role=%s index=%u client_id=%s)",
+             host, resolved_port, use_tls ? "yes" : "no", role ? role : "legacy",
+             (unsigned)ep_index, client_id);
     return ESP_OK;
-
-fail:
-    creds_lock_give();
-    tls_hook_release(client);
-    return err;
 }
 
 esp_err_t iotmer_connect(iotmer_client_t *client)
@@ -1036,8 +1119,15 @@ esp_err_t iotmer_connect(iotmer_client_t *client)
         }
     }
 
+    iotmer_mqtt_failover_prepare(client);
+    err = iotmer_mqtt_failover_start(client);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "MQTT failover worker not started (%s)", esp_err_to_name(err));
+    }
+
     err = mqtt_client_start(client);
     if (err != ESP_OK) {
+        iotmer_mqtt_failover_stop();
         goto fail_phantom;
     }
 
@@ -1073,9 +1163,12 @@ esp_err_t iotmer_reconnect_hard(iotmer_client_t *client)
         (void)esp_timer_stop((esp_timer_handle_t)client->reconnect_timer);
     }
 
+    /* Teardown is not a broker failure and must not move the endpoint index. */
+    iotmer_mqtt_failover_suppress_disconnect();
+
     client->connected = false;
     /* The interrupted attempt owes a release before the next acquire. */
-    tls_hook_release(client);
+    iotmer_tls_hook_release(client);
 
     if (client->mqtt) {
         (void)esp_mqtt_client_stop((esp_mqtt_client_handle_t)client->mqtt);
@@ -1134,6 +1227,9 @@ void iotmer_disconnect(iotmer_client_t *client)
 {
     if (!client) return;
 
+    /* Park probes and refreshes before the socket goes away. */
+    iotmer_mqtt_failover_stop();
+
     /*
      * Stop the timers *before* marking the client disconnected to avoid a race where
      * MQTT_EVENT_DISCONNECTED fires during teardown and re-arms the reconnect timer.
@@ -1161,7 +1257,7 @@ void iotmer_disconnect(iotmer_client_t *client)
     }
 
     client->connected = false;
-    tls_hook_release(client);
+    iotmer_tls_hook_release(client);
 
     if (client->mqtt) {
         (void)esp_mqtt_client_stop((esp_mqtt_client_handle_t)client->mqtt);

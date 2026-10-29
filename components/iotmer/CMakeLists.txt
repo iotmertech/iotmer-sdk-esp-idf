@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "iotmer_client.c"
         "iotmer_mqtt.c"
+        "iotmer_mqtt_failover.c"
         "iotmer_telemetry.c"
         "iotmer_presence.c"
         "iotmer_topics.c"
@@ -13,6 +14,6 @@ idf_component_register(
         "iotmer_ota.c"
         "iotmer_tls.c"
     INCLUDE_DIRS "include"
-    REQUIRES esp_http_client mqtt nvs_flash esp_wifi esp_event esp_netif esp-tls cjson app_update freertos mbedtls zlib
+    REQUIRES esp_http_client mqtt nvs_flash esp_wifi esp_event esp_netif esp-tls cjson app_update freertos mbedtls zlib lwip
 )
 
